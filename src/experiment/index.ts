@@ -47,6 +47,9 @@ export interface ExperimentConfig {
 
   /** Naive-control prompt seed (frozen at experiment start). */
   controlPromptSeed: string;
+
+  /** Optional per-component DB paths. Default: in-memory (tests). Production: paths under the Railway volume. */
+  harnessDbPaths?: { identity?: string; goals?: string; temporal?: string; meta?: string; coherence?: string };
 }
 
 export interface ExperimentHandle {
@@ -64,7 +67,10 @@ export async function startExperiment(config: ExperimentConfig): Promise<Experim
   const maxCycles = config.maxCycles ?? 1000;
 
   // Boot the V2 harness up-front so the dashboard can introspect it.
-  const v2Harness = bootHarness({ dialectic: config.dialectic });
+  const v2Harness = bootHarness({
+    dialectic: config.dialectic,
+    ...(config.harnessDbPaths !== undefined ? { dbPaths: config.harnessDbPaths } : {}),
+  });
 
   // V2 client + control client share the same Store but track different `kind`.
   const v2Client = new OpenRouterClient({

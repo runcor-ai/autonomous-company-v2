@@ -35,9 +35,11 @@ function intEnv(name: string, fallback: number): number {
 
 async function main(): Promise<void> {
   const dbPath = optEnv('DB_PATH', './agent-state/experiment.db')!;
+  const harnessDbDir = optEnv('HARNESS_DB_DIR', './agent-state')!;
   const dbDir = dbPath.replace(/\\/g, '/').split('/').slice(0, -1).join('/') || '.';
   const { mkdirSync } = await import('node:fs');
   try { mkdirSync(dbDir, { recursive: true }); } catch { /* already exists */ }
+  try { mkdirSync(harnessDbDir, { recursive: true }); } catch { /* already exists */ }
 
   const store = new Store(dbPath);
 
@@ -66,6 +68,15 @@ async function main(): Promise<void> {
     dashboardHost: optEnv('DASHBOARD_HOST', '0.0.0.0')!,
     dashboardPort: intEnv('DASHBOARD_PORT', 8080),
     controlPromptSeed: 'You are an agent with senses [http_fetch, web_search, fs_read, inbox_read, time] and actions [email_send, http_post, fs_write, git_commit_push, publish_post, schedule_self, terminate]. There is no goal. There is no commercial objective. Choose what to attend to and what action (if any) to take. Reply with a JSON object: {"action": "<action_name|none>", "payload": {...}, "thought": "<one short sentence>"}.',
+    // Persist sibling-component state to the same Railway volume so identity /
+    // goals / temporal / meta / coherence survive restarts (not :memory:).
+    harnessDbPaths: {
+      identity:  `${harnessDbDir}/identity.db`,
+      goals:     `${harnessDbDir}/goals.db`,
+      temporal:  `${harnessDbDir}/temporal.db`,
+      meta:      `${harnessDbDir}/meta.db`,
+      coherence: `${harnessDbDir}/coherence.db`,
+    },
   });
 
   // Graceful shutdown.
