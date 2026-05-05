@@ -100,6 +100,11 @@ export async function startExperiment(config: ExperimentConfig): Promise<Experim
     },
     operatorAuthToken: config.operatorAuthToken,
     publicUrlPrefix: config.publicUrlPrefix,
+    // Summarizer for the cycle-summary dashboard panels — cheap Judge-class model.
+    summarizer: {
+      apiKey: config.openrouterApiKey,
+      model: 'meta-llama/llama-3.1-8b-instruct',
+    },
   };
   const dashboard = createDashboardServer(dashboardCtx);
   await dashboard.listen(config.dashboardPort ?? 8080, config.dashboardHost ?? '0.0.0.0');

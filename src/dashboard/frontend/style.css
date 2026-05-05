@@ -56,6 +56,22 @@ footer { margin-top: 4rem; padding: 1.5rem 0; border-top: 1px solid var(--border
 footer a { color: var(--text2); text-decoration: none; }
 footer a:hover { color: var(--text); }
 
+/* ── Summary panels (above transcript) ── */
+.summary-section { margin-top: 2.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border); }
+.summary-section h2 { font-size: 1.2rem; margin-bottom: 0.4rem; }
+.summary-section .muted { color: var(--text3); font-size: 13px; margin-bottom: 0.75rem; }
+.summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+@media (max-width: 900px) { .summary-grid { grid-template-columns: 1fr; } }
+.summary-panel { background: var(--bg2); border: 1px solid var(--border); border-left: 3px solid var(--text3); border-radius: 8px; padding: 1rem 1.25rem; }
+.summary-v2 { border-left-color: var(--v2); }
+.summary-control { border-left-color: var(--ctrl); }
+.summary-panel header { display: flex; align-items: center; gap: 0.6rem; padding-bottom: 0.6rem; border-bottom: 1px solid var(--border); margin-bottom: 0.7rem; font-size: 11px; font-family: monospace; }
+.summary-body { font-size: 14px; line-height: 1.6; color: var(--text2); min-height: 90px; }
+.summary-body p { margin: 0.4rem 0; }
+.summary-body p:first-child { margin-top: 0; }
+.summary-body p:last-child { margin-bottom: 0; }
+.summary-body code { background: #0a0a0c; border: 1px solid var(--border); padding: 0 4px; border-radius: 3px; font-size: 12px; }
+
 /* ── Transcript feed ── */
 .transcript-controls { display: flex; align-items: center; gap: 1rem; margin: 0.75rem 0 1rem; font-size: 13px; color: var(--text3); }
 .transcript-controls label { display: flex; align-items: center; gap: 0.4rem; cursor: pointer; }

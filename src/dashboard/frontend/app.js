@@ -113,6 +113,28 @@ async function refreshScores() {
   }
 }
 
+// ── cycle summaries (cheap-model paraphrase of last 5 cycles) ──
+async function refreshSummaries() {
+  const [v2, ctrl] = await Promise.all([
+    fetchJson('/v2/cycle-summary'),
+    fetchJson('/control/cycle-summary'),
+  ]);
+  renderSummary('v2', v2);
+  renderSummary('control', ctrl);
+}
+function renderSummary(kind, data) {
+  const body = $(`${kind}-summary`);
+  const meta = $(`${kind}-summary-meta`);
+  if (!data || data.error) {
+    body.textContent = data?.error ?? '(no data)';
+    meta.textContent = '';
+    return;
+  }
+  body.innerHTML = md(data.summary || '(empty)');
+  const cached = data.fromCache ? ' (cached)' : '';
+  meta.textContent = `cycle ${data.lastCycle} · ${(data.generatedAt ?? '').slice(11, 19)} UTC${cached}`;
+}
+
 // ── transcript: history-on-load + live updates + markdown rendering ──
 
 const md = (text) => {
@@ -220,8 +242,10 @@ function startSse() {
 
   await refreshOnce();
   await refreshScores();
+  await refreshSummaries();
   await reloadTranscript();
   startSse();
   setInterval(refreshOnce, POLL_MS);
-  setInterval(refreshScores, POLL_MS);  // same cadence as panels — bar + chart update with the rest
+  setInterval(refreshScores, POLL_MS);          // bar + chart update with the rest
+  setInterval(refreshSummaries, 30_000);        // summaries refresh every 30s (server caches 60s)
 })();

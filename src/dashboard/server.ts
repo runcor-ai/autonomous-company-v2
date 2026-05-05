@@ -17,6 +17,7 @@ import {
 import { recentTranscript, attachSseStream, TranscriptBus } from './routes/transcript.js';
 import { blogJson, blogSinglePostJson, blogIndexHtml } from './routes/blog.js';
 import { scoresPayload } from './routes/scores.js';
+import { generateCycleSummary } from './routes/cycle_summary.js';
 import { handleOperatorRequest, createOperatorPauseHandle, type OperatorPauseHandle, type OperatorVerb } from './routes/operator.js';
 
 export interface DashboardServer {
@@ -128,6 +129,17 @@ async function handleRequest(
   for (const [re, handler] of jsonRoutes) {
     const m = re.exec(pathname);
     if (m) return sendJson(res, handler(m));
+  }
+
+  // ── Cycle summary (cheap-model summarization of last 5 cycles, cached 60s) ──
+  const summaryMatch = /^\/(v2|control)\/cycle-summary$/.exec(pathname);
+  if (summaryMatch) {
+    const kind = summaryMatch[1] as 'v2' | 'control';
+    const c = pickKindCtx(kind);
+    if (!c) return sendJson(res, { error: 'kind not running' });
+    if (!ctx.summarizer) return sendJson(res, { error: 'summarizer not configured' });
+    const out = await generateCycleSummary(c, kind, ctx.summarizer, { lastN: 5 });
+    return sendJson(res, out);
   }
 
   // ── Blog (HTML public + JSON API) ──

@@ -64,6 +64,21 @@
       <div id="current-score" class="muted"></div>
     </section>
 
+    <section class="summary-section">
+      <h2>Recent activity — last 5 cycles, summarized</h2>
+      <p class="muted">A cheap model (llama-3.1-8b) describes what each agent has been doing. Refreshes every 30s. Cached 60s server-side.</p>
+      <div class="summary-grid">
+        <div class="summary-panel summary-v2">
+          <header><span class="t-tag t-tag-v2">V2</span> <span id="v2-summary-meta" class="muted"></span></header>
+          <div id="v2-summary" class="summary-body">loading…</div>
+        </div>
+        <div class="summary-panel summary-control">
+          <header><span class="t-tag t-tag-control">control</span> <span id="control-summary-meta" class="muted"></span></header>
+          <div id="control-summary" class="summary-body">loading…</div>
+        </div>
+      </div>
+    </section>
+
     <section class="transcript-section">
       <h2>Transcript</h2>
       <p class="muted">Every Player/Coach/Judge round, every action. History on load + live SSE updates. Player output rendered as markdown.</p>

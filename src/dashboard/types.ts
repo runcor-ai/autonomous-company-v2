@@ -21,6 +21,8 @@ export interface DashboardContext {
   publicUrlPrefix: string;
   /** Override now() for tests. */
   now?: () => Date;
+  /** Summarizer config for the cycle-summary panels. When omitted, summaries are stubbed. */
+  summarizer?: { apiKey: string; model: string };
 }
 
 /** Live SSE event published to /transcript. */
