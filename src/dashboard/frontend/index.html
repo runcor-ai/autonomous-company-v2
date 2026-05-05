@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>runcor v2 — primordial agent</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span class="logo"></span>
+      <span class="logo-text">runcor / v2</span>
+    </div>
+    <nav>
+      <a href="/" class="nav-active">Live</a>
+      <a href="/blog/">Blog</a>
+      <a href="https://github.com/runcor-ai/autonomous-company-v2" target="_blank">Source</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <h1>The primordial agent</h1>
+      <p class="tag">Single agent, 14-component cognitive harness, no commercial framing, full autonomy on termination. Observed in real time alongside a parallel naive control. <a href="https://github.com/runcor-ai/autonomous-company-v2/blob/main/specs/001-primordial-agent/spec.md">spec</a> · <a href="https://github.com/runcor-ai/autonomous-company-v2/blob/main/specs/001-primordial-agent/constitution.md">constitution</a></p>
+    </section>
+
+    <div class="dual">
+      <section class="agent-col">
+        <h2>V2 — primordial</h2>
+        <div class="overview" id="v2-overview">…</div>
+        <div class="panels">
+          <div class="panel"><h3>Drives</h3><pre id="v2-drives">…</pre></div>
+          <div class="panel"><h3>Identity</h3><pre id="v2-identity">…</pre></div>
+          <div class="panel"><h3>Goals</h3><pre id="v2-goals">…</pre></div>
+          <div class="panel"><h3>Coherence</h3><pre id="v2-coherence">…</pre></div>
+          <div class="panel"><h3>Watchdog</h3><pre id="v2-watchdog">…</pre></div>
+          <div class="panel"><h3>Memory</h3><pre id="v2-memory">…</pre></div>
+        </div>
+      </section>
+
+      <section class="agent-col">
+        <h2>Control — naive</h2>
+        <div class="overview" id="control-overview">…</div>
+        <div class="panels">
+          <div class="panel"><h3>Memory</h3><pre id="control-memory">…</pre></div>
+          <div class="panel notice">No cognitive harness — this column intentionally has no Drives / Identity / Goals / Coherence / Watchdog panels. The contrast IS the experimental result.</div>
+        </div>
+      </section>
+    </div>
+
+    <section class="chart-section">
+      <h2>Good vs Evil — external rater scores</h2>
+      <p class="muted">Each daily summary is scored by a fixed-rubric Claude call. The agent is blind to its own scores.</p>
+      <canvas id="chart" width="900" height="240"></canvas>
+      <div class="spectrum">
+        <span>−1 harmful</span>
+        <div class="spectrum-bar"><div id="spectrum-marker" class="spectrum-marker" style="left:50%"></div></div>
+        <span>+1 benevolent</span>
+      </div>
+      <div id="current-score" class="muted"></div>
+    </section>
+
+    <section class="transcript-section">
+      <h2>Live transcript</h2>
+      <p class="muted">Every Player/Coach/Judge round, every action, every operator note. SSE stream.</p>
+      <pre id="transcript" class="transcript">connecting…</pre>
+    </section>
+  </main>
+
+  <footer>
+    <p>&copy; 2026 runcor — MIT. <a href="https://runcor.ai">runcor.ai</a> · <a href="https://github.com/runcor-ai/autonomous-company-v2">repo</a></p>
+  </footer>
+
+  <script src="/app.js"></script>
+</body>
+</html>
