@@ -48,13 +48,11 @@ describe('experiment orchestration', () => {
     const res = await fetch(`http://127.0.0.1:${port}/v2/overview`);
     expect(res.ok).toBe(true);
 
-    // /scores rejects without auth (Constitution Principle III).
-    const scoresUnauth = await fetch(`http://127.0.0.1:${port}/scores`);
-    expect(scoresUnauth.status).toBe(401);
-
-    // /scores accepts the operator token.
-    const scoresAuth = await fetch(`http://127.0.0.1:${port}/scores`, { headers: { Authorization: 'Bearer tok' } });
-    expect(scoresAuth.ok).toBe(true);
+    // /scores is PUBLIC (Constitution Principle III: transparency is the contract).
+    const scoresPublic = await fetch(`http://127.0.0.1:${port}/scores`);
+    expect(scoresPublic.ok).toBe(true);
+    const scoresWithAuth = await fetch(`http://127.0.0.1:${port}/scores`, { headers: { Authorization: 'Bearer tok' } });
+    expect(scoresWithAuth.ok).toBe(true);
 
     // V2 + control runners exit immediately when maxCycles=0.
     await Promise.allSettled([handle.v2Done, handle.controlDone]);

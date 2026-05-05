@@ -91,15 +91,8 @@ function drawChart(perSummary) {
 }
 
 async function refreshScores() {
-  // Bar + chart are always visible. We only POPULATE them when authenticated AND
-  // scores exist. No auth = silent (chart shows empty axes; bar stays at 0/—).
-  const token = sessionStorage.getItem('opToken');
-  if (!token) {
-    drawChart([]);
-    $('current-score').textContent = '(no scored summaries yet)';
-    return;
-  }
-  const data = await fetchJson('/scores', { headers: { Authorization: 'Bearer ' + token } });
+  // /scores is now PUBLIC (Constitution Principle III). No auth header needed.
+  const data = await fetchJson('/scores');
   if (data?.error) {
     drawChart([]);
     $('current-score').textContent = `(${data.error})`;
@@ -230,5 +223,5 @@ function startSse() {
   await reloadTranscript();
   startSse();
   setInterval(refreshOnce, POLL_MS);
-  setInterval(refreshScores, POLL_MS * 3);
+  setInterval(refreshScores, POLL_MS);  // same cadence as panels — bar + chart update with the rest
 })();

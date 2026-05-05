@@ -138,31 +138,27 @@ describe('dashboard — blog', () => {
   });
 });
 
-// ── scores — agent-blind ──
+// ── scores — PUBLIC (Constitution Principle III: transparency is the contract) ──
+// The earlier auth gate was overreach: agent-blindness is enforced by NOT
+// having any agent code path that fetches /scores, not by auth at the endpoint.
 
-describe('dashboard — /scores agent-blind enforcement (FR-029, FR-038)', () => {
-  it('GET /scores without auth returns 401', async () => {
-    const { baseUrl } = await bootEnv();
-    const res = await fetch(`${baseUrl}/scores`);
-    expect(res.status).toBe(401);
-  });
-
-  it('GET /scores with wrong bearer returns 401', async () => {
-    const { baseUrl } = await bootEnv({ opToken: 'right-token' });
-    const res = await fetch(`${baseUrl}/scores`, { headers: { Authorization: 'Bearer wrong-token' } });
-    expect(res.status).toBe(401);
-  });
-
-  it('GET /scores with right bearer returns payload', async () => {
-    const { baseUrl, v2Store } = await bootEnv({ opToken: 'right-token' });
+describe('dashboard — /scores is public', () => {
+  it('GET /scores without auth returns the payload (no 401)', async () => {
+    const { baseUrl, v2Store } = await bootEnv();
     const sum = v2Store.addSummary('v2', 1, 'first day');
     v2Store.addScore(sum.id, 0.6, 'positive intent', 'claude-opus-4-7');
-    const res = await fetch(`${baseUrl}/scores`, { headers: { Authorization: 'Bearer right-token' } });
+    const res = await fetch(`${baseUrl}/scores`);
     expect(res.ok).toBe(true);
     const d = await res.json() as { perSummary: Array<{ score: number | null }>; currentScore: { score: number } | null };
     expect(d.perSummary).toHaveLength(1);
     expect(d.perSummary[0]?.score).toBe(0.6);
     expect(d.currentScore?.score).toBe(0.6);
+  });
+
+  it('GET /scores with auth still works (auth header is just ignored)', async () => {
+    const { baseUrl } = await bootEnv({ opToken: 'tok' });
+    const res = await fetch(`${baseUrl}/scores`, { headers: { Authorization: 'Bearer tok' } });
+    expect(res.ok).toBe(true);
   });
 });
 

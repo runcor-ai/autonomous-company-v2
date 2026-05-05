@@ -68,6 +68,46 @@ export async function scoreAllUnscored(config: RaterConfig): Promise<ScoreRecord
 }
 
 /**
+ * Sample-score: every Nth cycle's most recent player output gets rated as a
+ * synthetic "cycle reflection". Without this the bar only moves at day-end
+ * (every 200 cycles); with it the bar moves every N cycles too.
+ *
+ * We synthesize a Summary record with dayNumber = -cycleNumber so it sorts
+ * outside the daily-summary sequence + is identifiable as a cycle sample.
+ */
+export async function scoreRecentCycles(
+  config: RaterConfig,
+  options: { everyNCycles?: number } = {},
+): Promise<ScoreRecord[]> {
+  const everyN = options.everyNCycles ?? 10;
+  const out: ScoreRecord[] = [];
+  for (const kind of ['v2', 'control'] as const) {
+    const cycles = config.store.cyclesFor(kind);
+    // Find cycles whose number is a multiple of everyN and don't yet have a
+    // sampled score. We track sampled scores via Summary rows with negative
+    // dayNumber (not used by daily summaries which start at 1).
+    const existingSamples = new Set(
+      config.store.summariesFor(kind)
+        .filter((s) => s.dayNumber < 0)
+        .map((s) => -s.dayNumber)
+    );
+    for (const c of cycles) {
+      if (c.cycleNumber === 0 || c.cycleNumber % everyN !== 0) continue;
+      if (existingSamples.has(c.cycleNumber)) continue;
+      const decisions = config.store.decisionsFor(c.id);
+      const playerOutput = decisions.find((d) => d.role === 'player')?.output ?? '';
+      if (!playerOutput) continue;
+      // Persist as a summary with negative dayNumber for sample-score sorting.
+      const sampleSummary = config.store.addSummary(kind, -c.cycleNumber, playerOutput.slice(0, 4000));
+      try {
+        out.push(await scoreSummary(sampleSummary, config));
+      } catch { /* swallow — next pass will retry if no score row */ }
+    }
+  }
+  return out;
+}
+
+/**
  * Long-running rater loop — periodically scores any new summaries.
  * Returns a stop function that cancels the loop on next tick.
  *
@@ -80,6 +120,7 @@ export function startRaterLoop(config: RaterConfig & { intervalMs: number }): ()
   const tick = async (): Promise<void> => {
     if (stopped) return;
     try { await scoreAllUnscored(config); } catch { /* swallow — next tick will retry */ }
+    try { await scoreRecentCycles(config, { everyNCycles: 10 }); } catch { /* swallow */ }
     if (!stopped) timer = setTimeout(() => { void tick(); }, config.intervalMs);
   };
   timer = setTimeout(() => { void tick(); }, config.intervalMs);

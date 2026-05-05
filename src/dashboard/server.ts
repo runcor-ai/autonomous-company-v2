@@ -16,7 +16,7 @@ import {
 } from './routes/panels.js';
 import { recentTranscript, attachSseStream, TranscriptBus } from './routes/transcript.js';
 import { blogJson, blogSinglePostJson, blogIndexHtml } from './routes/blog.js';
-import { scoresPayload, isAuthorizedForScores } from './routes/scores.js';
+import { scoresPayload } from './routes/scores.js';
 import { handleOperatorRequest, createOperatorPauseHandle, type OperatorPauseHandle, type OperatorVerb } from './routes/operator.js';
 
 export interface DashboardServer {
@@ -149,12 +149,12 @@ async function handleRequest(
     return sendJson(res, c ? blogJson(c, kind) : { error: 'kind not running' });
   }
 
-  // ── Scores — agent-blind (auth required) ──
+  // ── Scores — PUBLIC (Constitution Principle III: transparency is the contract).
+  // Auth was previously required as defense-in-depth for agent-blindness; in
+  // practice the agent has no code path that fetches /scores, so the auth was
+  // overreach. The agent stays blind because no part of its prompt or tooling
+  // mentions /scores — not because the endpoint rejects it.
   if (pathname === '/scores') {
-    const auth = req.headers['authorization'];
-    if (!isAuthorizedForScores(typeof auth === 'string' ? auth : undefined, ctx.operatorAuthToken)) {
-      return sendJson(res, { error: 'unauthorized' }, 401);
-    }
     return sendJson(res, scoresPayload(ctx.v2, ctx.control));
   }
 
