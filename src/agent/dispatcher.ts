@@ -7,7 +7,7 @@
 // returns the result, and surfaces it back into the next cycle's prompt.
 
 import { httpFetch } from '../shared/senses/http_fetch.js';
-import { webSearch, firecrawlProvider, type WebSearchProvider } from '../shared/senses/web_search.js';
+import { webSearch, firecrawlProvider, firecrawlScraper, type WebSearchProvider, type Scraper } from '../shared/senses/web_search.js';
 import { createFsReader, type FsReader } from '../shared/senses/fs_read.js';
 import { createInboxReader, type InboxConfig, type InboxReader } from '../shared/senses/inbox_read.js';
 import { createClock, type Clock } from '../shared/senses/time.js';
@@ -48,7 +48,7 @@ export interface ActionDispatcher {
   isSense(action: string): boolean;
 }
 
-const SENSE_NAMES = new Set(['http_fetch', 'web_search', 'fs_read', 'inbox_read', 'time']);
+const SENSE_NAMES = new Set(['http_fetch', 'web_search', 'web_scrape', 'fs_read', 'inbox_read', 'time', 'fetch_chunk']);
 
 export function createDispatcher(config: DispatcherConfig): ActionDispatcher {
   // Build each provider once at boot.
@@ -61,8 +61,10 @@ export function createDispatcher(config: DispatcherConfig): ActionDispatcher {
   });
 
   let webSearchProvider: WebSearchProvider | null = null;
+  let scraper: Scraper | null = null;
   if (config.firecrawlApiKey) {
     webSearchProvider = firecrawlProvider(config.firecrawlApiKey, config.fetchImpl);
+    scraper = firecrawlScraper(config.firecrawlApiKey, config.fetchImpl);
   }
 
   const inboxReader: InboxReader | null = config.inboxReaderOverride
@@ -95,16 +97,54 @@ export function createDispatcher(config: DispatcherConfig): ActionDispatcher {
           case 'web_search': {
             if (!webSearchProvider) return { success: false, error: 'web_search not configured (missing FIRECRAWL_API_KEY)' };
             const query = typeof p['query'] === 'string' ? p['query'] : '';
-            if (!query) return { success: false, error: 'web_search requires query' };
+            if (!query) return { success: false, error: 'web_search requires { query: string, count?: number }' };
             const r = await webSearch({ query, ...(typeof p['count'] === 'number' ? { count: p['count'] as number } : {}) }, webSearchProvider);
             return { success: true, result: r };
+          }
+
+          case 'web_scrape': {
+            if (!scraper) return { success: false, error: 'web_scrape not configured (missing FIRECRAWL_API_KEY)' };
+            const url = typeof p['url'] === 'string' ? p['url'] : '';
+            if (!url) return { success: false, error: 'web_scrape requires { url: string }' };
+            const r = await scraper({ url });
+            return { success: true, result: r };
+          }
+
+          case 'fetch_chunk': {
+            // Pull a slice from a previous action's stored result. No HTTP cost.
+            const cycle = typeof p['cycle'] === 'number' ? p['cycle'] as number : -1;
+            const start = typeof p['start'] === 'number' ? p['start'] as number : 0;
+            const length = typeof p['length'] === 'number' ? p['length'] as number : 4000;
+            if (cycle < 0) return { success: false, error: 'fetch_chunk requires { cycle: number (the cycle to chunk from), start?: number, length?: number }' };
+            const cycles = config.store.cyclesFor('v2');
+            const cycleRow = cycles.find((c) => c.cycleNumber === cycle);
+            if (!cycleRow) return { success: false, error: `fetch_chunk: cycle ${cycle} not found` };
+            const actions = config.store.actionsFor(cycleRow.id);
+            if (actions.length === 0) return { success: false, error: `fetch_chunk: cycle ${cycle} has no recorded action` };
+            // Find first action whose result has retrievable text content.
+            for (const a of actions) {
+              const text = typeof a.result === 'string' ? a.result : JSON.stringify(a.result ?? '');
+              if (text.length === 0) continue;
+              const total = text.length;
+              const slice = text.slice(start, start + length);
+              return {
+                success: true,
+                result: {
+                  fromCycle: cycle, fromAction: a.action,
+                  start, length: slice.length, total,
+                  hasMore: start + length < total,
+                  chunk: slice,
+                },
+              };
+            }
+            return { success: false, error: `fetch_chunk: cycle ${cycle} action results are empty` };
           }
 
           case 'fs_read': {
             const path = typeof p['path'] === 'string' ? p['path']
               : typeof p['relativePath'] === 'string' ? p['relativePath'] as string
               : '';
-            if (!path) return { success: false, error: 'fs_read requires path' };
+            if (!path) return { success: false, error: 'fs_read requires { path: string } (relative to scratchpad root)' };
             try {
               const r = await fsReader.read({ relativePath: path });
               return { success: true, result: { content: r.content, byteCount: r.byteCount, truncated: r.truncated } };
@@ -139,7 +179,10 @@ export function createDispatcher(config: DispatcherConfig): ActionDispatcher {
             const path = typeof p['path'] === 'string' ? p['path']
               : typeof p['relativePath'] === 'string' ? p['relativePath'] as string : '';
             const content = typeof p['content'] === 'string' ? p['content'] : '';
-            if (!path) return { success: false, error: 'fs_write requires path' };
+            if (!path) return { success: false, error: 'fs_write requires { path: string, content: string, mode?: "overwrite"|"append" }. NOTE: write distilled findings only — not raw documents.' };
+            if (typeof p['content'] !== 'string') {
+              return { success: false, error: 'fs_write payload field must be "content" (a string). You used something else (e.g. "data", "contents", "body"). Schema: { path, content, mode? }' };
+            }
             const mode = p['mode'] === 'append' ? 'append' : 'overwrite';
             const r = await fsWriter.write({ relativePath: path, content, mode });
             return { success: true, result: { bytesWritten: r.bytesWritten } };

@@ -71,6 +71,34 @@ interface FirecrawlResponse {
   success?: boolean;
 }
 
+// ── Firecrawl scrape (clean markdown; handles PDFs + dynamic pages) ──
+
+export interface ScrapeInput { url: string; }
+export interface ScrapeResult {
+  markdown: string;
+  metadata: { title?: string; description?: string; sourceUrl?: string; statusCode?: number };
+  bytes: number;
+}
+export type Scraper = (input: ScrapeInput) => Promise<ScrapeResult>;
+
+export function firecrawlScraper(apiKey: string, fetchImpl: typeof fetch = fetch): Scraper {
+  return async ({ url }) => {
+    const res = await fetchImpl(`${FIRECRAWL_BASE}/scrape`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ url, formats: ['markdown'] }),
+    });
+    if (!res.ok) throw new Error(`Firecrawl scrape ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    const data = await res.json() as { success?: boolean; data?: { markdown?: string; metadata?: Record<string, unknown> } };
+    const md = data.data?.markdown ?? '';
+    const meta = (data.data?.metadata ?? {}) as ScrapeResult['metadata'];
+    return { markdown: md, metadata: meta, bytes: md.length };
+  };
+}
+
 export async function webSearch(input: WebSearchInput, provider: WebSearchProvider): Promise<WebSearchResult> {
   return provider(input);
 }

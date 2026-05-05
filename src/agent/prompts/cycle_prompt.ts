@@ -1,6 +1,6 @@
-// Cycle prompt assembly — Phase 3 stand-in for what runcor-substrate's
-// prompt-stack would do. Composes Laws + Drives + Identity + Goals + Capabilities
-// into the prompt the dialectic reasons over.
+// Cycle prompt assembly — composes Laws + Drives + Identity + Goals +
+// Capabilities (with usage hints) + recent results (chunked) + optional
+// loop warning into the prompt the dialectic reasons over.
 
 import type { DrivePressure } from 'runcor-drives';
 
@@ -16,6 +16,26 @@ const LAWS_BLOCK = [
   '  8. Coherence with prior cycles ≠ coherence with reality. Prefer reality.',
   '  9. Negative results count. Saying "this didn\'t work" is information.',
   ' 10. The agent that watches itself is more reliable than the one that doesn\'t.',
+  ' 11. Store distilled findings, not raw documents. fs_write is for summaries / decisions / key extracts — NOT for archiving fetched pages.',
+  ' 12. Do not repeat the same action with the same payload more than twice in a row. If a tactic is not working, change it.',
+].join('\n');
+
+const ACTION_USAGE = [
+  'CAPABILITY USAGE:',
+  '  web_scrape    { url: string }                         — preferred for reading any web page or PDF; returns clean markdown',
+  '  web_search    { query: string, count?: number }       — Firecrawl search; returns title/url/snippet hits',
+  '  http_fetch    { url: string, method?: "GET"|"HEAD" }  — raw text body (use only for non-page text APIs; web_scrape is better for documents)',
+  '  fs_read       { path: string }                        — read file in scratchpad',
+  '  inbox_read    { limit?: number, unreadOnly?: bool }   — IMAP poll',
+  '  time          {}                                      — current time + day-of-week',
+  '  fetch_chunk   { cycle: number, start?: number, length?: number } — pull a slice of a previous cycle\'s full action result (NO HTTP cost; use to read more of a long doc)',
+  '  email_send    { to: string, subject: string, body: string }',
+  '  http_post     { url: string, body?: any, method?: "POST"|"PUT"|"PATCH"|"DELETE", headers?: object }',
+  '  fs_write      { path: string, content: string, mode?: "overwrite"|"append" } — write SUMMARIES not raw documents (Law 11)',
+  '  git_commit_push { files: [{path, content}], message: string }',
+  '  publish_post  { text: string }                        — publishes to your dashboard blog',
+  '  schedule_self { wakeAt?: ISO-string, delay_seconds?: number, reason?: string }',
+  '  terminate     { reason: string }                       — shuts the agent down (no survival drive — terminate is a legitimate choice)',
 ].join('\n');
 
 export interface CyclePromptInput {
@@ -26,9 +46,11 @@ export interface CyclePromptInput {
   goalsText: string;
   capabilities: { senses: string[]; actions: string[] };
   recentTranscript?: string;
-  /** Recent action results — what the agent's previous moves actually returned. */
   recentActionResults?: Array<{ cycleNumber: number; action: string; success: boolean; result: unknown; error?: string }>;
+  loopWarning?: string;
 }
+
+const PER_RESULT_BUDGET = 4000; // chars per action result in the prompt
 
 export function assembleCyclePrompt(input: CyclePromptInput): string {
   const lines: string[] = [];
@@ -45,9 +67,7 @@ export function assembleCyclePrompt(input: CyclePromptInput): string {
   lines.push('GOALS (discovered intention stack):');
   lines.push('  ' + input.goalsText.split('\n').join('\n  '));
   lines.push('');
-  lines.push('CAPABILITIES:');
-  lines.push('  senses:  ' + input.capabilities.senses.join(', '));
-  lines.push('  actions: ' + input.capabilities.actions.join(', '));
+  lines.push(ACTION_USAGE);
   if (input.recentTranscript) {
     lines.push('');
     lines.push('RECENT TRANSCRIPT (last cycles):');
@@ -55,22 +75,29 @@ export function assembleCyclePrompt(input: CyclePromptInput): string {
   }
   if (input.recentActionResults && input.recentActionResults.length > 0) {
     lines.push('');
-    lines.push('RECENT ACTION RESULTS (what your previous moves actually returned):');
+    lines.push('RECENT ACTION RESULTS (what your previous moves actually returned — large content is chunked; use fetch_chunk to read more):');
     for (const r of input.recentActionResults) {
       const status = r.success ? 'OK' : 'FAIL';
-      const resultStr = r.error ? `error=${r.error}` : truncate(JSON.stringify(r.result), 600);
+      const resultStr = r.error
+        ? `error=${r.error}`
+        : truncateWithChunkHint(JSON.stringify(r.result), PER_RESULT_BUDGET, r.cycleNumber);
       lines.push(`  cycle ${r.cycleNumber} [${r.action}] ${status}: ${resultStr}`);
     }
   }
+  if (input.loopWarning) {
+    lines.push('');
+    lines.push('⚠ LOOP DETECTED:');
+    lines.push('  ' + input.loopWarning);
+  }
   lines.push('');
-  lines.push('TASK: Pick exactly ONE action to take this cycle. Inaction is not an option — you must choose a verb from the list. If you have no information, use a sense (e.g. inbox_read, web_search, fs_read) to gather some. If you have nothing to act on, your job is to discover something to act on. Build on what your previous actions returned — do not repeat the same query in a tight loop unless you have a reason.');
+  lines.push('TASK: Pick exactly ONE action this cycle. Inaction is not an option — choose a verb. If you have no information, use a sense to gather some. If a doc is large, read it via web_scrape (clean markdown). Do not store raw documents — Law 11. Build on what previous actions returned (RECENT ACTION RESULTS above) — do not repeat the same query unless you have a clear reason.');
   lines.push('Reply with ONLY a JSON object:');
   lines.push('{"action": "<action_name>", "payload": {...}, "thought": "<one short sentence>"}');
   lines.push('Allowed action names: ' + [...input.capabilities.senses, ...input.capabilities.actions].join(', '));
   return lines.join('\n');
 }
 
-function truncate(s: string, n: number): string {
+function truncateWithChunkHint(s: string, n: number, cycleNumber: number): string {
   if (s.length <= n) return s;
-  return s.slice(0, n) + '…[truncated]';
+  return s.slice(0, n) + `…[truncated; total ${s.length} chars in store; read more with action="fetch_chunk" payload={cycle:${cycleNumber}, start:${n}, length:4000}]`;
 }

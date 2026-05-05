@@ -140,8 +140,10 @@ describe('Phase 3 — cycle runs through harness end-to-end', () => {
     expect(capturedPrompt).toContain('IDENTITY');
     expect(capturedPrompt).toContain('GOALS');
     expect(capturedPrompt).toContain('discover what is worth attending to');
-    expect(capturedPrompt).toContain('CAPABILITIES');
+    expect(capturedPrompt).toContain('CAPABILITY USAGE');
     expect(capturedPrompt).toContain('http_fetch');
+    expect(capturedPrompt).toContain('web_scrape');
+    expect(capturedPrompt).toContain('fetch_chunk');
     expect(capturedPrompt).toContain('terminate');
     closeHarness(harness);
     store.close();

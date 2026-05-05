@@ -18,7 +18,7 @@ import type { AgentHarness } from './boot.js';
 import type { ActionDispatcher } from './dispatcher.js';
 import { assembleCyclePrompt } from './prompts/cycle_prompt.js';
 
-const SENSES = ['http_fetch', 'web_search', 'fs_read', 'inbox_read', 'time'];
+const SENSES = ['web_scrape', 'web_search', 'http_fetch', 'fs_read', 'inbox_read', 'time', 'fetch_chunk'];
 const ACTIONS = ['email_send', 'http_post', 'fs_write', 'git_commit_push', 'publish_post', 'schedule_self', 'terminate'];
 
 export interface AgentCycleInput {
@@ -138,6 +138,17 @@ export async function runAgentCycle(input: AgentCycleInput): Promise<AgentCycleR
       ...(a.error !== undefined ? { error: a.error } : {}),
     }));
 
+    // 3b. Loop detection — if the agent has picked the same (action, payload-hash)
+    //     3+ times consecutively, surface a warning so it knows to break out.
+    let loopWarning: string | undefined;
+    if (allActions.length >= 3) {
+      const last3 = allActions.slice(-3);
+      const sigs = last3.map((a) => `${a.action}|${JSON.stringify(a.payload)}`);
+      if (sigs[0] === sigs[1] && sigs[1] === sigs[2]) {
+        loopWarning = `You have picked the SAME action with the SAME payload 3 cycles in a row: ${last3[0]!.action} ${JSON.stringify(last3[0]!.payload).slice(0, 200)}. Either it is genuinely the right next move (rare — explain why in your thought) or you are looping. Try something different — a different URL, a different sense, a different verb.`;
+      }
+    }
+
     // 4. Assemble cycle prompt (substrate-style stack).
     const prompt = assembleCyclePrompt({
       cycleNumber,
@@ -147,6 +158,7 @@ export async function runAgentCycle(input: AgentCycleInput): Promise<AgentCycleR
       goalsText,
       capabilities: { senses: SENSES, actions: ACTIONS },
       recentActionResults,
+      ...(loopWarning !== undefined ? { loopWarning } : {}),
     });
 
     // 4. Dialectic reasons.
