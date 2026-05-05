@@ -5,6 +5,7 @@ import { Store } from '../shared/db.js';
 import { OpenRouterClient, BudgetExceededError } from '../shared/openrouter.js';
 import { bootHarness, closeHarness, type DialecticLike } from './boot.js';
 import { runAgentCycle } from './cycle.js';
+import { isDayBoundary, reflectAndPublish, type DayBoundaryConfig } from './daily.js';
 
 export interface AgentRunnerConfig {
   store?: Store;
@@ -19,6 +20,14 @@ export interface AgentRunnerConfig {
   harnessDbPaths?: { identity?: string; goals?: string; temporal?: string; meta?: string; coherence?: string };
   /** Estimated USD burn per cycle, fed to drives. Default 0.005. */
   burnPerCycleUsd?: number;
+  /** Day-boundary detection config. */
+  dayBoundary?: DayBoundaryConfig;
+  /** Public URL prefix for published-summary links. Default: localhost. */
+  publicUrlPrefix?: string;
+  /** Optional pause flag the runner consults between cycles (operator pause). */
+  isPaused?: () => boolean;
+  /** Optional callback fired when a daily summary is published. */
+  onDailySummary?: (summary: { dayNumber: number; summaryId: number; text: string; publicUrl: string }) => void;
   sleepImpl?: (ms: number) => Promise<void>;
   client?: OpenRouterClient;
 }
@@ -51,8 +60,13 @@ export async function runAgent(config: AgentRunnerConfig): Promise<AgentRunResul
   let cyclesRun = 0;
   let reason: AgentRunResult['reason'] = 'maxCycles';
 
+  const publicUrlPrefix = config.publicUrlPrefix ?? 'http://localhost';
   try {
     for (let n = startCycle; n < config.maxCycles; n++) {
+      // Honor operator pause between cycles (Constitution Principle IV — operator
+      // can pause but cannot kill).
+      while (config.isPaused?.()) await sleep(500);
+
       try {
         const result = await runAgentCycle({
           store, openrouter, harness,
@@ -67,6 +81,19 @@ export async function runAgent(config: AgentRunnerConfig): Promise<AgentRunResul
         reason = 'error';
         throw err;
       }
+
+      // Day-end detection: after the cycle completes, check whether we crossed
+      // a day boundary. If so, run reflect-on-day then publish.
+      if (isDayBoundary(n, store, config.dayBoundary)) {
+        try {
+          const summary = await reflectAndPublish({
+            store, harness, cycleEnd: n, publicUrlPrefix,
+            ...(config.dayBoundary !== undefined ? { config: config.dayBoundary } : {}),
+          });
+          config.onDailySummary?.(summary);
+        } catch { /* swallow — next day's reflection will retry */ }
+      }
+
       if (n < config.maxCycles - 1) await sleep(config.intervalSeconds * 1000);
     }
   } finally {
