@@ -7,10 +7,9 @@
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "agent": "node --enable-source-maps dist/agent/index.js",
-    "control": "node --enable-source-maps dist/control/index.js",
-    "dashboard": "node --enable-source-maps dist/dashboard/server.js",
-    "build": "tsc -p tsconfig.json"
+    "build": "tsc -p tsconfig.json",
+    "start": "node --enable-source-maps -r dotenv/config dist/main.js",
+    "preflight": "node --enable-source-maps -r dotenv/config dist/scripts/preflight.js"
   },
   "keywords": ["agent", "emergence", "primordial", "cognitive-harness", "runcor", "experiment"],
   "author": "runcor <hello@runcor.ai>",
@@ -21,6 +20,7 @@
   "engines": { "node": ">=20.6.0" },
   "dependencies": {
     "better-sqlite3": "^11.3.0",
+    "dotenv": "^16.4.5",
     "imapflow": "^1.0.171",
     "nodemailer": "^6.9.16",
     "runcor-coherence": "file:../runcor-coherence",

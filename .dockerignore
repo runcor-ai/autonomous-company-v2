@@ -1,0 +1,15 @@
+node_modules
+dist
+dist-test
+coverage
+.env
+.env.local
+.git
+.gitignore
+agent-state
+control-state
+*.db
+*.db-journal
+*.log
+.vscode
+.idea
