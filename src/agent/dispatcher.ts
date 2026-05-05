@@ -9,12 +9,12 @@
 import { httpFetch } from '../shared/senses/http_fetch.js';
 import { webSearch, firecrawlProvider, type WebSearchProvider } from '../shared/senses/web_search.js';
 import { createFsReader, type FsReader } from '../shared/senses/fs_read.js';
-import { createMockInboxReader, type InboxConfig, type InboxReader } from '../shared/senses/inbox_read.js';
+import { createInboxReader, type InboxConfig, type InboxReader } from '../shared/senses/inbox_read.js';
 import { createClock, type Clock } from '../shared/senses/time.js';
 import { httpPost } from '../shared/actions/http_post.js';
 import { createFsWriter, type FsWriter } from '../shared/actions/fs_write.js';
-import { createMockEmailSender, type EmailSender, type EmailSenderConfig } from '../shared/actions/email_send.js';
-import { createMockGitCommitPusher, type GitCommitPusher, type GitWorkspaceConfig } from '../shared/actions/git_commit_push.js';
+import { createEmailSender, type EmailSender, type EmailSenderConfig } from '../shared/actions/email_send.js';
+import { createGitCommitPusher, type GitCommitPusher, type GitWorkspaceConfig } from '../shared/actions/git_commit_push.js';
 import { createPostPublisher, type PostPublisher } from '../shared/actions/publish_post.js';
 import { createSelfScheduler, type SelfScheduler } from '../shared/actions/schedule_self.js';
 import type { Store } from '../shared/db.js';
@@ -66,13 +66,11 @@ export function createDispatcher(config: DispatcherConfig): ActionDispatcher {
   }
 
   const inboxReader: InboxReader | null = config.inboxReaderOverride
-    ?? (config.inboxConfig
-      ? createMockInboxReader([])  // TODO: wire createInboxReader once we have IMAP up; placeholder for now
-      : null);
+    ?? (config.inboxConfig ? createInboxReader(config.inboxConfig) : null);
   const emailSender: EmailSender | null = config.emailSenderOverride
-    ?? (config.emailSender ? createMockEmailSender() : null);  // TODO: wire createEmailSender; placeholder
+    ?? (config.emailSender ? createEmailSender(config.emailSender) : null);
   const gitPusher: GitCommitPusher | null = config.gitPusherOverride
-    ?? (config.gitWorkspace ? createMockGitCommitPusher() : null);  // TODO: wire createGitCommitPusher; placeholder
+    ?? (config.gitWorkspace ? createGitCommitPusher(config.gitWorkspace) : null);
 
   const fetchImpl = config.fetchImpl ?? fetch;
 

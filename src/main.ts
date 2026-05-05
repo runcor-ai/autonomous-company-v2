@@ -37,9 +37,41 @@ async function main(): Promise<void> {
   const dbPath = optEnv('DB_PATH', './agent-state/experiment.db')!;
   const harnessDbDir = optEnv('HARNESS_DB_DIR', './agent-state')!;
   const dbDir = dbPath.replace(/\\/g, '/').split('/').slice(0, -1).join('/') || '.';
-  const { mkdirSync } = await import('node:fs');
-  try { mkdirSync(dbDir, { recursive: true }); } catch { /* already exists */ }
-  try { mkdirSync(harnessDbDir, { recursive: true }); } catch { /* already exists */ }
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+
+  // Optional: wipe state on boot. Toggle RESET_ON_BOOT=true via Railway env to
+  // start the experiment fresh (clears all SQLite dbs + scratchpad). After a
+  // successful clean boot, unset RESET_ON_BOOT so subsequent restarts don't wipe.
+  if (optEnv('RESET_ON_BOOT') === 'true') {
+    console.log('[runcor] RESET_ON_BOOT=true — wiping agent-state…');
+    const candidates = [dbPath, dbPath + '-journal', dbPath + '-shm', dbPath + '-wal']
+      .concat(['identity', 'goals', 'temporal', 'meta', 'coherence'].flatMap((n) => [
+        path.join(harnessDbDir, `${n}.db`),
+        path.join(harnessDbDir, `${n}.db-journal`),
+        path.join(harnessDbDir, `${n}.db-shm`),
+        path.join(harnessDbDir, `${n}.db-wal`),
+      ]));
+    let wiped = 0;
+    for (const f of candidates) {
+      try { fs.unlinkSync(f); wiped++; console.log(`[runcor]   removed ${f}`); }
+      catch (e) {
+        const code = (e as NodeJS.ErrnoException).code;
+        if (code !== 'ENOENT') console.warn(`[runcor]   could not remove ${f}: ${(e as Error).message}`);
+      }
+    }
+    // Wipe scratchpad too.
+    const scratchpadDir = optEnv('AGENT_FS_ROOT', `${harnessDbDir}/scratchpad`)!;
+    try {
+      fs.rmSync(scratchpadDir, { recursive: true, force: true });
+      console.log(`[runcor]   removed ${scratchpadDir}`);
+      wiped++;
+    } catch { /* not present */ }
+    console.log(`[runcor] wipe complete (${wiped} paths). Remember to UNSET RESET_ON_BOOT after this clean boot.`);
+  }
+
+  try { fs.mkdirSync(dbDir, { recursive: true }); } catch { /* already exists */ }
+  try { fs.mkdirSync(harnessDbDir, { recursive: true }); } catch { /* already exists */ }
 
   const store = new Store(dbPath);
 
