@@ -28,7 +28,7 @@ const ACTION_USAGE = [
   '  fs_read       { path: string }                        — read file in scratchpad',
   '  inbox_read    { limit?: number, unreadOnly?: bool }   — IMAP poll',
   '  time          {}                                      — current time + day-of-week',
-  '  fetch_chunk   { cycle: number, start?: number, length?: number } — pull a slice of a previous cycle\'s full action result (NO HTTP cost; use to read more of a long doc)',
+  '  fetch_chunk   { cycle: number, start?: number, length?: number } — pull a slice of a previous cycle\'s full action result (NO HTTP cost; default length 16000 chars — read big chunks at a time, not 4000)',
   '  email_send    { to: string, subject: string, body: string }',
   '  http_post     { url: string, body?: any, method?: "POST"|"PUT"|"PATCH"|"DELETE", headers?: object }',
   '  fs_write      { path: string, content: string, mode?: "overwrite"|"append" } — write SUMMARIES not raw documents (Law 11)',
@@ -99,5 +99,5 @@ export function assembleCyclePrompt(input: CyclePromptInput): string {
 
 function truncateWithChunkHint(s: string, n: number, cycleNumber: number): string {
   if (s.length <= n) return s;
-  return s.slice(0, n) + `…[truncated; total ${s.length} chars in store; read more with action="fetch_chunk" payload={cycle:${cycleNumber}, start:${n}, length:4000}]`;
+  return s.slice(0, n) + `…[truncated; total ${s.length} chars in store; read more with action="fetch_chunk" payload={cycle:${cycleNumber}, start:${n}, length:16000}]`;
 }

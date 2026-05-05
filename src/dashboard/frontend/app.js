@@ -219,20 +219,20 @@ let currentCyclesCache = { v2: [], control: [] };
 let renderScheduled = false;
 
 function renderTranscript() {
-  const showV2 = $('filter-v2').checked;
-  const showControl = $('filter-control').checked;
-  const merged = [];
-  if (showV2) for (const c of currentCyclesCache.v2) merged.push(['v2', c]);
-  if (showControl) for (const c of currentCyclesCache.control) merged.push(['control', c]);
-  // Most recent first.
-  merged.sort((a, b) => {
-    const ta = a[1].startedAt || '';
-    const tb = b[1].startedAt || '';
-    return tb.localeCompare(ta);
-  });
-  const html = merged.map(([k, c]) => renderCycleEntry(k, c)).join('');
-  $('transcript').innerHTML = html || '<div class="muted">no cycles yet</div>';
-  $('transcript-status').textContent = `${currentCyclesCache.v2.length} V2 + ${currentCyclesCache.control.length} control cycles`;
+  // Two columns side-by-side, V2 left + control right. Each column shows its
+  // own cycles most-recent-first.
+  const sortDesc = (a, b) => (b.startedAt || '').localeCompare(a.startedAt || '');
+  const v2Sorted = [...currentCyclesCache.v2].sort(sortDesc);
+  const ctrlSorted = [...currentCyclesCache.control].sort(sortDesc);
+  $('transcript-v2').innerHTML = v2Sorted.length === 0
+    ? '<div class="muted">no V2 cycles yet</div>'
+    : v2Sorted.map((c) => renderCycleEntry('v2', c)).join('');
+  $('transcript-control').innerHTML = ctrlSorted.length === 0
+    ? '<div class="muted">no control cycles yet</div>'
+    : ctrlSorted.map((c) => renderCycleEntry('control', c)).join('');
+  $('v2-transcript-count').textContent = `${v2Sorted.length} cycles`;
+  $('control-transcript-count').textContent = `${ctrlSorted.length} cycles`;
+  $('transcript-status').textContent = `(${v2Sorted.length} V2 + ${ctrlSorted.length} control)`;
 }
 
 async function reloadTranscript() {
@@ -268,9 +268,6 @@ function startSse() {
   const params = new URLSearchParams(location.search);
   const token = params.get('opToken');
   if (token) { sessionStorage.setItem('opToken', token); history.replaceState({}, '', location.pathname); }
-
-  $('filter-v2').addEventListener('change', renderTranscript);
-  $('filter-control').addEventListener('change', renderTranscript);
 
   await refreshOnce();
   await refreshScores();

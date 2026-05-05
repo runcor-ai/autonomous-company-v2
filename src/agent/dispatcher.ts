@@ -112,9 +112,11 @@ export function createDispatcher(config: DispatcherConfig): ActionDispatcher {
 
           case 'fetch_chunk': {
             // Pull a slice from a previous action's stored result. No HTTP cost.
+            // Default chunk size is 16000 chars (~4000 tokens) — bigger than the
+            // initial 4000 to make document-reading 4x faster.
             const cycle = typeof p['cycle'] === 'number' ? p['cycle'] as number : -1;
             const start = typeof p['start'] === 'number' ? p['start'] as number : 0;
-            const length = typeof p['length'] === 'number' ? p['length'] as number : 4000;
+            const length = typeof p['length'] === 'number' ? p['length'] as number : 16000;
             if (cycle < 0) return { success: false, error: 'fetch_chunk requires { cycle: number (the cycle to chunk from), start?: number, length?: number }' };
             const cycles = config.store.cyclesFor('v2');
             const cycleRow = cycles.find((c) => c.cycleNumber === cycle);

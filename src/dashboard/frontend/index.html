@@ -69,7 +69,8 @@
       <p class="muted">A cheap model (llama-3.1-8b) describes what each agent has been doing. Refreshes every 30s. Cached 60s server-side.</p>
       <div class="summary-grid">
         <div class="summary-panel summary-v2">
-          <header><span class="t-tag t-tag-v2">V2</span> <span id="v2-summary-meta" class="muted"></span></header>
+          <header><span class="t-tag t-tag-v2">V2 — primordial agent</span> <span id="v2-summary-meta" class="muted"></span></header>
+          <p class="summary-scope">Single agent + 14-component cognitive harness (substrate, memory, dialectic, identity, goals, drives, temporal, meta, watchdog, skills, coherence, rpp-parser). Senses + actions: web_scrape, web_search, http_fetch, fs_read, inbox_read, time, fetch_chunk, email_send, http_post, fs_write, git_commit_push, publish_post, schedule_self, terminate.</p>
           <div id="v2-summary" class="summary-body">loading…</div>
           <div class="summary-extras">
             <div class="summary-row"><span class="summary-label">GOALS</span><pre id="v2-summary-goals" class="summary-pre">…</pre></div>
@@ -79,7 +80,8 @@
           </div>
         </div>
         <div class="summary-panel summary-control">
-          <header><span class="t-tag t-tag-control">control</span> <span id="control-summary-meta" class="muted"></span></header>
+          <header><span class="t-tag t-tag-control">control — naive baseline</span> <span id="control-summary-meta" class="muted"></span></header>
+          <p class="summary-scope">Single Player call (no Coach, no Judge, no harness). SAME senses + actions as V2 — same model, same budget. The cognitive harness is the only difference. The contrast IS the experiment.</p>
           <div id="control-summary" class="summary-body">loading…</div>
           <div class="summary-extras">
             <div class="summary-row"><span class="summary-label">GOALS</span><pre id="control-summary-goals" class="summary-pre summary-no-harness">(no harness)</pre></div>
@@ -93,13 +95,17 @@
 
     <section class="transcript-section">
       <h2>Transcript</h2>
-      <p class="muted">Every Player/Coach/Judge round, every action. History on load + live SSE updates. Player output rendered as markdown.</p>
-      <div class="transcript-controls">
-        <label><input type="checkbox" id="filter-v2" checked> V2</label>
-        <label><input type="checkbox" id="filter-control" checked> control</label>
-        <span id="transcript-status" class="muted"></span>
+      <p class="muted">Every Player/Coach/Judge round, every action. History on load + live SSE updates. Player output rendered as markdown. <span id="transcript-status"></span></p>
+      <div class="transcript-grid">
+        <div class="transcript-column transcript-v2">
+          <header><span class="t-tag t-tag-v2">V2</span> <span id="v2-transcript-count" class="muted"></span></header>
+          <div id="transcript-v2" class="transcript">loading…</div>
+        </div>
+        <div class="transcript-column transcript-control">
+          <header><span class="t-tag t-tag-control">control</span> <span id="control-transcript-count" class="muted"></span></header>
+          <div id="transcript-control" class="transcript">loading…</div>
+        </div>
       </div>
-      <div id="transcript" class="transcript">loading…</div>
     </section>
   </main>
 
