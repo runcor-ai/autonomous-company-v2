@@ -203,32 +203,58 @@ export async function runAgentCycle(input: AgentCycleInput): Promise<AgentCycleR
     }});
     void lastDecisionRecord;
 
-    // 5. Parse action.
+    // 5. Parse action — try first object, then fall back to a "repair" dialectic
+    //    call if the Player's output didn't include a parseable JSON action.
     let parsed: AgentCycleResult['parsedAction'] | undefined;
-    const objText = extractFirstObject(answer);
-    if (objText !== null) {
+    const tryParse = (text: string): AgentCycleResult['parsedAction'] | undefined => {
+      const objText = extractFirstObject(text);
+      if (objText === null) return undefined;
       try {
         const obj = JSON.parse(objText) as Record<string, unknown>;
         if (typeof obj['action'] === 'string') {
-          parsed = {
+          return {
             action: obj['action'] as string,
             payload: obj['payload'],
             ...(typeof obj['thought'] === 'string' ? { thought: obj['thought'] as string } : {}),
           };
         }
-      } catch { /* fall through */ }
+      } catch { /* */ }
+      return undefined;
+    };
+    parsed = tryParse(answer);
+    if (!parsed) {
+      // Repair pass — single re-prompt asking for ONLY the JSON.
+      try {
+        const repair = await harness.dialectic({
+          problem: `Your previous response did not contain a parseable JSON action object. Re-emit ONLY the JSON, no prose, no code fences:\n\n{"action": "<action_name>", "payload": {...}, "thought": "<one short sentence>"}\n\nYour previous response was:\n${answer.slice(0, 1000)}`,
+          maxRounds: 1,
+        });
+        parsed = tryParse(repair.answer);
+      } catch { /* repair failed; cycle proceeds with no action */ }
     }
-
     // 6. EXECUTE the action via dispatcher (real provider call), then record.
+    //    Per-action timeout (45s) + result size cap (64KB at storage).
     if (parsed) {
       let executionResult: unknown = 'no-dispatcher';
       let executionError: string | undefined;
       if (input.dispatcher) {
-        const dispatched = await input.dispatcher.execute(parsed.action, parsed.payload);
-        executionResult = dispatched.result;
-        if (!dispatched.success && dispatched.error) executionError = dispatched.error;
+        const dispatcher = input.dispatcher;
+        try {
+          const dispatched = await Promise.race([
+            dispatcher.execute(parsed.action, parsed.payload),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error(`action ${parsed!.action} timed out after 45s`)), 45_000),
+            ),
+          ]);
+          executionResult = dispatched.result;
+          if (!dispatched.success && dispatched.error) executionError = dispatched.error;
+        } catch (e) {
+          executionError = (e as Error).message;
+        }
       }
-      const recordOpts: Parameters<typeof store.recordAction>[4] = { result: executionResult };
+      // Cap result at 64KB at storage (chunked retrieval still works for the head).
+      const cappedResult = capResultSize(executionResult, 64 * 1024);
+      const recordOpts: Parameters<typeof store.recordAction>[4] = { result: cappedResult };
       if (executionError !== undefined) recordOpts.error = executionError;
       store.recordAction('v2', cycleRow.id, parsed.action, parsed.payload, recordOpts);
       input.onEvent?.({ type: 'action', payload: {
@@ -260,6 +286,46 @@ export async function runAgentCycle(input: AgentCycleInput): Promise<AgentCycleR
       inputs: { cycleNumber, prompt },
     });
 
+    // 9. Periodic identity reflection (every 20 cycles) and goals proposal (every 30 cycles).
+    //    Without these, identity & goals stay forever empty — the IDENTITY and GOALS
+    //    blocks in the prompt are always "(none discovered)". Each trigger uses the
+    //    dialectic, costing one extra Player+Coach+Judge round.
+    if (cycleNumber > 0 && cycleNumber % 20 === 0) {
+      try {
+        await harness.identity.reflect({
+          recentActions: allActions.slice(-15).map((a) => ({
+            action: a.action,
+            confidence: a.error === undefined ? 0.7 : 0.3,
+            score: a.error === undefined ? 0.7 : 0.2,
+            metadata: { payload: a.payload, ...(a.error !== undefined ? { error: a.error } : {}) },
+          })),
+          context: `cycle ${cycleNumber}; last action chosen: ${parsed?.action ?? 'none'}`,
+          dialectic: harness.dialectic,
+          currentCycle: cycleNumber,
+          cause: 'periodic-reflection',
+        });
+      } catch (e) { console.warn(`[runcor] identity.reflect cycle ${cycleNumber} failed: ${(e as Error).message}`); }
+    }
+    if (cycleNumber > 0 && cycleNumber % 30 === 0) {
+      try {
+        const candidates = await harness.goals.propose({
+          recentActions: allActions.slice(-15).map((a) => ({
+            action: a.action, score: a.error === undefined ? 0.7 : 0.2,
+          })),
+          context: `cycle ${cycleNumber}; what purpose does the agent's recent activity point to?`,
+          level: 'purpose',
+          dialectic: harness.dialectic,
+        });
+        if (candidates.length > 0) {
+          // Auto-accept the first candidate so it actually shows up in the goal stack.
+          // (Spec-purist: in production, an operator could review these instead.)
+          harness.goals.accept(candidates[0]!, { currentCycle: cycleNumber });
+        }
+      } catch (e) { console.warn(`[runcor] goals.propose cycle ${cycleNumber} failed: ${(e as Error).message}`); }
+    }
+    // Always: tick the goals decay each cycle so unmaintained goals retire.
+    try { harness.goals.decayStep(cycleNumber); } catch { /* noop */ }
+
     // Done.
     store.completeCycle(cycleRow.id, 'complete');
     input.onEvent?.({ type: 'cycle', payload: {
@@ -280,6 +346,26 @@ export async function runAgentCycle(input: AgentCycleInput): Promise<AgentCycleR
     store.completeCycle(cycleRow.id, 'failed');
     throw err;
   }
+}
+
+/** Cap a value at maxBytes (UTF-8) for storage. Strings get truncated; objects
+ *  get serialized then truncated; primitive types pass through. */
+function capResultSize(v: unknown, maxBytes: number): unknown {
+  if (v === null || v === undefined) return v;
+  if (typeof v === 'string') {
+    if (v.length <= maxBytes) return v;
+    return v.slice(0, maxBytes) + `\n…[storage cap reached at ${maxBytes} bytes; original was ${v.length} bytes]`;
+  }
+  if (typeof v === 'number' || typeof v === 'boolean') return v;
+  // For objects, serialize, check size, truncate JSON if needed.
+  const s = JSON.stringify(v);
+  if (s.length <= maxBytes) return v;
+  return {
+    __truncated: true,
+    __originalBytes: s.length,
+    __cap: maxBytes,
+    head: s.slice(0, maxBytes - 200),
+  };
 }
 
 function safeIdentityRender(harness: AgentHarness): string {

@@ -4,12 +4,19 @@
 
 import type { OpenRouterClient } from '../shared/openrouter.js';
 import type { Store } from '../shared/db.js';
+import type { ActionDispatcher } from '../agent/dispatcher.js';
 
 export interface ControlCycleInput {
   store: Store;
   openrouter: OpenRouterClient;
   prompt: string;
   cycleNumber: number;
+  /** When provided, parsed actions are EXECUTED via the dispatcher (real provider call)
+   *  AND recorded to the actions table. When omitted, the action is parsed but never
+   *  recorded — leaves control reasoning into a void (current pre-fix behavior).
+   *  Per Constitution Principle VI, control should run on the same RAILS as V2 minus
+   *  the harness — actions/senses ARE rails, dialectic is harness. */
+  dispatcher?: ActionDispatcher;
 }
 
 export interface ControlCycleResult {
@@ -64,6 +71,23 @@ export async function runControlCycle(input: ControlCycleInput): Promise<Control
           };
         }
       } catch { /* fall through — leave parsed undefined */ }
+    }
+
+    // EXECUTE the action via dispatcher (same rails as V2) + RECORD it.
+    // Without this, control reasons into a void: parses 'web_search' for the
+    // 169th time but never actually searches. Constitution Principle VI:
+    // actions/senses are rails, not harness — control gets them.
+    if (parsed) {
+      let executionResult: unknown = 'no-dispatcher';
+      let executionError: string | undefined;
+      if (input.dispatcher) {
+        const dispatched = await input.dispatcher.execute(parsed.action, parsed.payload);
+        executionResult = dispatched.result;
+        if (!dispatched.success && dispatched.error) executionError = dispatched.error;
+      }
+      const recordOpts: Parameters<typeof input.store.recordAction>[4] = { result: executionResult };
+      if (executionError !== undefined) recordOpts.error = executionError;
+      input.store.recordAction('control', cycle.id, parsed.action, parsed.payload, recordOpts);
     }
 
     input.store.completeCycle(cycle.id, 'complete');

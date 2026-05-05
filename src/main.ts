@@ -79,10 +79,27 @@ async function main(): Promise<void> {
     store,
     openrouterApiKey: reqEnv('OPENROUTER_API_KEY'),
     dialectic: async ({ problem, maxRounds }) => {
-      const result = await dialectic({
-        problem,
-        ...(maxRounds !== undefined ? { maxRounds } : {}),
-      });
+      // Wrap with retry-on-transient: OpenRouter occasionally blips (5xx, 429,
+      // timeouts) and a single bad call kills the whole cycle. Two retries with
+      // jittered backoff covers most real-world transients.
+      let lastErr: Error | undefined;
+      let result: Awaited<ReturnType<typeof dialectic>> | undefined;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          result = await dialectic({
+            problem,
+            ...(maxRounds !== undefined ? { maxRounds } : {}),
+          });
+          break;
+        } catch (e) {
+          lastErr = e as Error;
+          if (attempt < 2) {
+            const backoffMs = 500 * Math.pow(2, attempt) + Math.random() * 500;
+            await new Promise((r) => setTimeout(r, backoffMs));
+          }
+        }
+      }
+      if (!result) throw lastErr ?? new Error('dialectic failed after 3 attempts');
       const tokens = (result as { cost?: { tokens?: { input?: number; output?: number } } }).cost?.tokens;
       const rawTranscript = (result as { transcript?: Array<{
         role: string; model: string; content: string;

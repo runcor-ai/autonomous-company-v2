@@ -143,7 +143,8 @@ export async function startExperiment(config: ExperimentConfig): Promise<Experim
     }
   })();
 
-  // Control runner — frozen 5-min cadence, no harness.
+  // Control runner — frozen cadence, no harness — but SAME RAILS as V2 (dispatcher
+  // executes actions for real). Without dispatcher, control reasons into a void.
   const controlCfg: ControlRunnerConfig = {
     store, apiKey: config.openrouterApiKey, budgetCapUsd: controlCap, maxCycles,
     intervalSeconds: config.controlIntervalSeconds ?? 300,
@@ -152,6 +153,7 @@ export async function startExperiment(config: ExperimentConfig): Promise<Experim
     onEvent: (ev) => dashboard.bus.broadcast({
       kind: 'control', type: ev.type, payload: ev.payload, ts: new Date().toISOString(),
     }),
+    ...(dispatcher !== undefined ? { dispatcher } : {}),
   };
   const controlDone: Promise<void> = (async () => { await runControl(controlCfg); })();
 

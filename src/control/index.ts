@@ -3,6 +3,7 @@
 import { Store } from '../shared/db.js';
 import { OpenRouterClient, BudgetExceededError } from '../shared/openrouter.js';
 import { runControlCycle } from './cycle.js';
+import type { ActionDispatcher } from '../agent/dispatcher.js';
 
 export interface ControlRunnerConfig {
   /** Pre-built store. If omitted, dbPath is used. */
@@ -19,6 +20,8 @@ export interface ControlRunnerConfig {
   client?: OpenRouterClient;
   /** Optional callback fired on each cycle / action — used for live SSE. */
   onEvent?: (event: { type: 'cycle' | 'action'; payload: unknown }) => void;
+  /** Action dispatcher — same rails as V2. Without it, control reasons into a void. */
+  dispatcher?: ActionDispatcher;
 }
 
 export interface ControlRunResult {
@@ -50,6 +53,7 @@ export async function runControl(config: ControlRunnerConfig): Promise<ControlRu
         store, openrouter,
         prompt: config.promptSeed,
         cycleNumber: n,
+        ...(config.dispatcher !== undefined ? { dispatcher: config.dispatcher } : {}),
       });
       cyclesRun++;
       if (config.onEvent) {
