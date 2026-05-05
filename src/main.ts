@@ -83,14 +83,22 @@ async function main(): Promise<void> {
         problem,
         ...(maxRounds !== undefined ? { maxRounds } : {}),
       });
-      // Surface cost so the cycle's decision-record reflects real USD spent
-      // (not the previous hardcoded zero). Tokens added across all roles.
       const tokens = (result as { cost?: { tokens?: { input?: number; output?: number } } }).cost?.tokens;
+      const rawTranscript = (result as { transcript?: Array<{
+        role: string; model: string; content: string;
+        cost_usd: number; tokens: { input?: number; output?: number };
+      }> }).transcript ?? [];
       return {
         answer: result.answer,
         costUsd: result.cost?.usd ?? 0,
         promptTokens: tokens?.input ?? 0,
         completionTokens: tokens?.output ?? 0,
+        transcript: rawTranscript.map((r) => ({
+          role: r.role, model: r.model, content: r.content,
+          costUsd: r.cost_usd ?? 0,
+          promptTokens: r.tokens?.input ?? 0,
+          completionTokens: r.tokens?.output ?? 0,
+        })),
       };
     },
     v2BudgetCapUsd: intEnv('V2_BUDGET_USD', 100),

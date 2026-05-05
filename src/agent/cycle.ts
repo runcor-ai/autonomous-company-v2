@@ -156,24 +156,40 @@ export async function runAgentCycle(input: AgentCycleInput): Promise<AgentCycleR
     // Persist as a decision row. Real cost comes from dialectic (Player+Coach+Judge);
     // dialectic owns its own cost tracker so we record what it returns rather than
     // double-charging via OpenRouterClient.
-    const decisionRecord = store.recordDecision({
-      kind: 'v2',
-      cycleId: cycleRow.id,
-      role: 'player',
-      model: 'dialectic',
-      prompt,
-      output: answer,
-      costUsd: result.costUsd ?? 0,
-      promptTokens: result.promptTokens ?? 0,
-      completionTokens: result.completionTokens ?? 0,
-      createdAt: new Date().toISOString(),
-    });
+    // Persist each Player / Coach / Judge round as its own decision row so the
+    // dashboard transcript shows the full deliberation, not just the final answer.
+    // Falls back to one synthetic 'player' row when the dialectic doesn't expose
+    // a transcript (mocks in tests).
+    const rounds = result.transcript && result.transcript.length > 0
+      ? result.transcript
+      : [{ role: 'player', model: 'dialectic',
+           content: answer, costUsd: result.costUsd ?? 0,
+           promptTokens: result.promptTokens ?? 0,
+           completionTokens: result.completionTokens ?? 0 }];
+    let lastDecisionRecord: ReturnType<typeof store.recordDecision> | undefined;
+    for (const r of rounds) {
+      lastDecisionRecord = store.recordDecision({
+        kind: 'v2',
+        cycleId: cycleRow.id,
+        role: r.role,
+        model: r.model,
+        prompt: r.role === 'player' && r === rounds[0] ? prompt : '',  // only first row carries the cycle prompt
+        output: r.content,
+        costUsd: r.costUsd,
+        promptTokens: r.promptTokens,
+        completionTokens: r.completionTokens,
+        createdAt: new Date().toISOString(),
+      });
+    }
     void input.openrouter; // referenced for symmetry; dialectic owns its own cost tracking
     input.onEvent?.({ type: 'decision', payload: {
-      cycleNumber, costUsd: decisionRecord.costUsd,
-      promptTokens: decisionRecord.promptTokens, completionTokens: decisionRecord.completionTokens,
+      cycleNumber,
+      rounds: rounds.length,
+      totalCostUsd: rounds.reduce((s, r) => s + r.costUsd, 0),
+      totalTokens: rounds.reduce((s, r) => s + r.promptTokens + r.completionTokens, 0),
       preview: answer.slice(0, 200),
     }});
+    void lastDecisionRecord;
 
     // 5. Parse action.
     let parsed: AgentCycleResult['parsedAction'] | undefined;

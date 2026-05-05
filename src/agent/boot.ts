@@ -19,13 +19,24 @@ import { createCoherence, type Coherence } from 'runcor-coherence';
 import { parse, validate } from 'rpp-parser';
 
 /** Minimal contract every harness component agrees on for reasoning calls.
- *  Real dialectic returns more — cost + transcript — and we surface cost so the
- *  cycle-level decision record can write actual USD spent (not zero). */
+ *  Real dialectic returns more — cost + transcript — and we surface both so the
+ *  cycle-level decision record can write actual USD spent and so each
+ *  Player / Coach / Judge round can be persisted as its own decision row. */
+export interface DialecticRound {
+  role: string;
+  model: string;
+  content: string;
+  costUsd: number;
+  promptTokens: number;
+  completionTokens: number;
+}
 export type DialecticLike = (config: { problem: string; maxRounds?: number }) => Promise<{
   answer: string;
   costUsd?: number;
   promptTokens?: number;
   completionTokens?: number;
+  /** Per-round trace: every Player draft, every Coach critique, every Judge verdict. */
+  transcript?: DialecticRound[];
 }>;
 
 export interface BootOptions {
