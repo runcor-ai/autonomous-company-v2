@@ -27,8 +27,12 @@ export interface DashboardServer {
   close(): Promise<void>;
 }
 
-const FRONTEND_DIR = path.dirname(fileURLToPath(import.meta.url)).includes('dist')
-  ? path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'src', 'dashboard', 'frontend')
+// Frontend assets live at <repo>/src/dashboard/frontend in source AND in the
+// runtime image (single-stage Dockerfile keeps src/ at /workspace/.../src/).
+// When this file is compiled, it lives at dist/dashboard/server.js — up TWO
+// dirs to escape dist/, then into src/dashboard/frontend/.
+const FRONTEND_DIR = path.dirname(fileURLToPath(import.meta.url)).includes(`${path.sep}dist${path.sep}`)
+  ? path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'src', 'dashboard', 'frontend')
   : path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'frontend');
 
 export function createDashboardServer(ctx: DashboardContext): DashboardServer {
