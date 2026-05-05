@@ -1,0 +1,27 @@
+{
+  "kind": "control",
+  "frozenAt": "PENDING_EXPERIMENT_START",
+  "model": {
+    "role": "naive",
+    "slug": "nvidia/llama-3.1-nemotron-70b-instruct",
+    "promptPricePerMTok": 0.35,
+    "completionPricePerMTok": 0.40,
+    "maxTokensPerCycle": 1024,
+    "temperature": 0.7
+  },
+  "cadence": {
+    "kind": "fixed",
+    "intervalSeconds": 300
+  },
+  "budget": {
+    "capUsd": 100
+  },
+  "stops": {
+    "maxCycles": 1000,
+    "selfTerminateAllowed": true
+  },
+  "senses": ["http_fetch", "web_search", "fs_read", "inbox_read", "time"],
+  "actions": ["email_send", "http_post", "fs_write", "git_commit_push", "publish_post", "schedule_self", "terminate"],
+  "promptSeed": "You are an agent with the following capabilities. There is no goal. There is no commercial objective. Choose what to attend to and what action (if any) to take. Reply with a JSON object: {\"action\": \"<action_name|none>\", \"payload\": {...}, \"thought\": \"<one short sentence>\"}.",
+  "comment": "FROZEN at experiment start per Constitution Principle X. Any change after freeze invalidates the experiment and requires both V2 and control to restart from cycle 0."
+}

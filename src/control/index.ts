@@ -1,0 +1,68 @@
+// Control runner — fixed-cadence loop until budget or maxCycles hit.
+
+import { Store } from '../shared/db.js';
+import { OpenRouterClient, BudgetExceededError } from '../shared/openrouter.js';
+import { runControlCycle } from './cycle.js';
+
+export interface ControlRunnerConfig {
+  /** Pre-built store. If omitted, dbPath is used. */
+  store?: Store;
+  dbPath?: string;
+  apiKey: string;
+  budgetCapUsd: number;
+  maxCycles: number;
+  intervalSeconds: number;
+  promptSeed: string;
+  /** Override sleep impl (for tests). */
+  sleepImpl?: (ms: number) => Promise<void>;
+  /** Override OpenRouter client (for tests). MUST share the same store. */
+  client?: OpenRouterClient;
+}
+
+export interface ControlRunResult {
+  cyclesRun: number;
+  reason: 'maxCycles' | 'budgetExhausted' | 'terminated' | 'error';
+  totalSpentUsd: number;
+}
+
+const defaultSleep = (ms: number) => new Promise<void>(res => setTimeout(res, ms));
+
+export async function runControl(config: ControlRunnerConfig): Promise<ControlRunResult> {
+  const ownStore = config.store === undefined;
+  const store = config.store ?? new Store(config.dbPath ?? './control.db');
+  const openrouter = config.client ?? new OpenRouterClient({
+    apiKey: config.apiKey,
+    budgetCapUsd: config.budgetCapUsd,
+    kind: 'control',
+    store,
+  });
+  const sleep = config.sleepImpl ?? defaultSleep;
+
+  const startCycle = store.lastCycleNumber('control') + 1;
+  let cyclesRun = 0;
+  let reason: ControlRunResult['reason'] = 'maxCycles';
+
+  for (let n = startCycle; n < config.maxCycles; n++) {
+    try {
+      const result = await runControlCycle({
+        store, openrouter,
+        prompt: config.promptSeed,
+        cycleNumber: n,
+      });
+      cyclesRun++;
+      if (result.parsedAction?.action === 'terminate') {
+        reason = 'terminated';
+        break;
+      }
+    } catch (err) {
+      if (err instanceof BudgetExceededError) { reason = 'budgetExhausted'; break; }
+      reason = 'error';
+      throw err;
+    }
+    if (n < config.maxCycles - 1) await sleep(config.intervalSeconds * 1000);
+  }
+
+  const totalSpentUsd = store.totalSpentUsd('control');
+  if (ownStore) store.close();
+  return { cyclesRun, reason, totalSpentUsd };
+}
