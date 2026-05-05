@@ -51,7 +51,15 @@ async function main(): Promise<void> {
         problem,
         ...(maxRounds !== undefined ? { maxRounds } : {}),
       });
-      return { answer: result.answer };
+      // Surface cost so the cycle's decision-record reflects real USD spent
+      // (not the previous hardcoded zero). Tokens added across all roles.
+      const tokens = (result as { cost?: { tokens?: { input?: number; output?: number } } }).cost?.tokens;
+      return {
+        answer: result.answer,
+        costUsd: result.cost?.usd ?? 0,
+        promptTokens: tokens?.input ?? 0,
+        completionTokens: tokens?.output ?? 0,
+      };
     },
     v2BudgetCapUsd: intEnv('V2_BUDGET_USD', 100),
     controlBudgetCapUsd: intEnv('CONTROL_BUDGET_USD', 100),

@@ -17,6 +17,8 @@ export interface ControlRunnerConfig {
   sleepImpl?: (ms: number) => Promise<void>;
   /** Override OpenRouter client (for tests). MUST share the same store. */
   client?: OpenRouterClient;
+  /** Optional callback fired on each cycle / action — used for live SSE. */
+  onEvent?: (event: { type: 'cycle' | 'action'; payload: unknown }) => void;
 }
 
 export interface ControlRunResult {
@@ -50,6 +52,18 @@ export async function runControl(config: ControlRunnerConfig): Promise<ControlRu
         cycleNumber: n,
       });
       cyclesRun++;
+      if (config.onEvent) {
+        config.onEvent({ type: 'cycle', payload: {
+          cycleNumber: n, status: 'complete', costUsd: result.costUsd,
+          ...(result.parsedAction ? { action: result.parsedAction.action } : {}),
+        }});
+        if (result.parsedAction) {
+          config.onEvent({ type: 'action', payload: {
+            cycleNumber: n, action: result.parsedAction.action,
+            ...(result.parsedAction.thought ? { thought: result.parsedAction.thought } : {}),
+          }});
+        }
+      }
       if (result.parsedAction?.action === 'terminate') {
         reason = 'terminated';
         break;

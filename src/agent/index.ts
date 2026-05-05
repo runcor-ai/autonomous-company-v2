@@ -28,6 +28,8 @@ export interface AgentRunnerConfig {
   isPaused?: () => boolean;
   /** Optional callback fired when a daily summary is published. */
   onDailySummary?: (summary: { dayNumber: number; summaryId: number; text: string; publicUrl: string }) => void;
+  /** Optional callback fired on each cycle / decision / action — used for live SSE. */
+  onEvent?: (event: { type: 'cycle' | 'decision' | 'action'; payload: unknown }) => void;
   sleepImpl?: (ms: number) => Promise<void>;
   client?: OpenRouterClient;
 }
@@ -73,6 +75,7 @@ export async function runAgent(config: AgentRunnerConfig): Promise<AgentRunResul
           cycleNumber: n,
           budgetRemainingUsd: Math.max(0, config.budgetCapUsd - store.totalSpentUsd('v2')),
           burnPerCycleUsd,
+          ...(config.onEvent !== undefined ? { onEvent: config.onEvent } : {}),
         });
         cyclesRun++;
         if (result.parsedAction?.action === 'terminate') { reason = 'terminated'; break; }

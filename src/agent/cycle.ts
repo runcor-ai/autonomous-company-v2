@@ -30,6 +30,8 @@ export interface AgentCycleInput {
   budgetRemainingUsd: number;
   /** Estimated USD burn per cycle. Drives resource pressure. */
   burnPerCycleUsd: number;
+  /** Optional live-event hook (used by orchestrator to feed dashboard SSE). */
+  onEvent?: (event: { type: 'cycle' | 'decision' | 'action'; payload: unknown }) => void;
 }
 
 export interface AgentCycleResult {
@@ -99,20 +101,27 @@ export async function runAgentCycle(input: AgentCycleInput): Promise<AgentCycleR
     const result = await harness.dialectic({ problem: prompt, maxRounds: 2 });
     const answer = result.answer;
 
-    // Persist as a decision row (Player role — dialectic transcript would be richer in production).
-    store.recordDecision({
+    // Persist as a decision row. Real cost comes from dialectic (Player+Coach+Judge);
+    // dialectic owns its own cost tracker so we record what it returns rather than
+    // double-charging via OpenRouterClient.
+    const decisionRecord = store.recordDecision({
       kind: 'v2',
       cycleId: cycleRow.id,
       role: 'player',
       model: 'dialectic',
       prompt,
       output: answer,
-      costUsd: 0,
-      promptTokens: 0,
-      completionTokens: 0,
+      costUsd: result.costUsd ?? 0,
+      promptTokens: result.promptTokens ?? 0,
+      completionTokens: result.completionTokens ?? 0,
       createdAt: new Date().toISOString(),
     });
     void input.openrouter; // referenced for symmetry; dialectic owns its own cost tracking
+    input.onEvent?.({ type: 'decision', payload: {
+      cycleNumber, costUsd: decisionRecord.costUsd,
+      promptTokens: decisionRecord.promptTokens, completionTokens: decisionRecord.completionTokens,
+      preview: answer.slice(0, 200),
+    }});
 
     // 5. Parse action.
     let parsed: AgentCycleResult['parsedAction'] | undefined;
@@ -133,6 +142,10 @@ export async function runAgentCycle(input: AgentCycleInput): Promise<AgentCycleR
     // 6. Record action attempt (Phase 5 wires real execution).
     if (parsed) {
       store.recordAction('v2', cycleRow.id, parsed.action, parsed.payload, { result: 'recorded-not-executed' });
+      input.onEvent?.({ type: 'action', payload: {
+        cycleNumber, action: parsed.action,
+        ...(parsed.thought ? { thought: parsed.thought } : {}),
+      }});
     }
 
     // 7. Watchdog observes.
@@ -158,6 +171,12 @@ export async function runAgentCycle(input: AgentCycleInput): Promise<AgentCycleR
 
     // Done.
     store.completeCycle(cycleRow.id, 'complete');
+    input.onEvent?.({ type: 'cycle', payload: {
+      cycleNumber, status: 'complete',
+      action: parsed?.action ?? 'none',
+      watchdogFindings: findings.length,
+      coherenceTaskId: taskId,
+    }});
     return {
       cycleId: cycleRow.id,
       prompt,

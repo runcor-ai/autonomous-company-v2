@@ -119,6 +119,9 @@ export async function startExperiment(config: ExperimentConfig): Promise<Experim
     onDailySummary: (s) => dashboard.bus.broadcast({
       kind: 'v2', type: 'summary', payload: s, ts: new Date().toISOString(),
     }),
+    onEvent: (ev) => dashboard.bus.broadcast({
+      kind: 'v2', type: ev.type, payload: ev.payload, ts: new Date().toISOString(),
+    }),
     client: v2Client,
   };
   const v2Done: Promise<void> = (async () => {
@@ -135,6 +138,9 @@ export async function startExperiment(config: ExperimentConfig): Promise<Experim
     intervalSeconds: config.controlIntervalSeconds ?? 300,
     promptSeed: config.controlPromptSeed,
     client: controlClient,
+    onEvent: (ev) => dashboard.bus.broadcast({
+      kind: 'control', type: ev.type, payload: ev.payload, ts: new Date().toISOString(),
+    }),
   };
   const controlDone: Promise<void> = (async () => { await runControl(controlCfg); })();
 

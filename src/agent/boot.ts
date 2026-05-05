@@ -18,8 +18,15 @@ import { createSkills, type Skills } from 'runcor-skills';
 import { createCoherence, type Coherence } from 'runcor-coherence';
 import { parse, validate } from 'rpp-parser';
 
-/** Minimal contract every harness component agrees on for reasoning calls. */
-export type DialecticLike = (config: { problem: string; maxRounds?: number }) => Promise<{ answer: string }>;
+/** Minimal contract every harness component agrees on for reasoning calls.
+ *  Real dialectic returns more — cost + transcript — and we surface cost so the
+ *  cycle-level decision record can write actual USD spent (not zero). */
+export type DialecticLike = (config: { problem: string; maxRounds?: number }) => Promise<{
+  answer: string;
+  costUsd?: number;
+  promptTokens?: number;
+  completionTokens?: number;
+}>;
 
 export interface BootOptions {
   /** Caller-provided dialectic — runcor-dialectic in production, mock in tests. */
