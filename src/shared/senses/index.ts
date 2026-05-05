@@ -1,6 +1,6 @@
 export { httpFetch } from './http_fetch.js';
 export type { HttpFetchInput, HttpFetchResult } from './http_fetch.js';
-export { webSearch, braveProvider } from './web_search.js';
+export { webSearch, braveProvider, firecrawlProvider } from './web_search.js';
 export type { WebSearchInput, WebSearchResult, WebSearchHit, WebSearchProvider } from './web_search.js';
 export { createFsReader } from './fs_read.js';
 export type { FsReadInput, FsReadResult, FsReader } from './fs_read.js';

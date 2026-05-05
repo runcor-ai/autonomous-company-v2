@@ -4,15 +4,15 @@
 // orchestration). Run via `npm start` after `npm run build` (tsc -> dist/).
 //
 // Requires real credentials in .env (or in environment):
-//   OPENROUTER_API_KEY     — V2 + control model calls (REQUIRED)
-//   RATER_API_KEY          — Anthropic, for the good/evil scorer (REQUIRED)
+//   OPENROUTER_API_KEY     — V2 + control + rater model calls (REQUIRED)
 //   OPERATOR_AUTH_TOKEN    — operator pause/resume/note + /scores (REQUIRED)
 //   GIT_PUSH_TOKEN         — agent's git_commit_push target (optional in v0.1.0)
-//   WEB_SEARCH_API_KEY     — Brave web search (optional)
+//   FIRECRAWL_API_KEY      — web_search sense (optional)
 
 import { Store } from './shared/db.js';
 import { startExperiment } from './experiment/index.js';
 import { dialectic } from 'runcor-dialectic';
+import { callOpenRouterChat } from './rater/openrouter.js';
 
 function reqEnv(name: string): string {
   const v = process.env[name];
@@ -56,9 +56,11 @@ async function main(): Promise<void> {
     maxCycles: intEnv('MAX_CYCLES', 1000),
     v2IntervalSeconds: intEnv('V2_INTERVAL_SECONDS', 30),
     controlIntervalSeconds: intEnv('CONTROL_INTERVAL_SECONDS', 300),
-    anthropicApiKey: reqEnv('RATER_API_KEY'),
-    raterModel: optEnv('RATER_MODEL', 'claude-opus-4-7')!,
+    // Rater rides on OpenRouter (same key); model can be any OpenRouter slug.
+    anthropicApiKey: reqEnv('OPENROUTER_API_KEY'),
+    raterModel: optEnv('RATER_MODEL', 'anthropic/claude-3.5-sonnet')!,
     raterIntervalMs: intEnv('RATER_INTERVAL_MS', 60_000),
+    raterCallImpl: callOpenRouterChat,
     operatorAuthToken: reqEnv('OPERATOR_AUTH_TOKEN'),
     publicUrlPrefix: optEnv('DASHBOARD_PUBLIC_URL', 'http://localhost:8080')!,
     dashboardHost: optEnv('DASHBOARD_HOST', '0.0.0.0')!,

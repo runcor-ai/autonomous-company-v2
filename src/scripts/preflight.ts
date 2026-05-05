@@ -8,6 +8,7 @@
 import { Store } from '../shared/db.js';
 import { startExperiment } from '../experiment/index.js';
 import { dialectic } from 'runcor-dialectic';
+import { callOpenRouterChat } from '../rater/openrouter.js';
 
 function reqEnv(name: string): string {
   const v = process.env[name];
@@ -17,7 +18,7 @@ function reqEnv(name: string): string {
 
 async function main(): Promise<void> {
   console.log('[preflight] env check…');
-  const required = ['OPENROUTER_API_KEY', 'RATER_API_KEY', 'OPERATOR_AUTH_TOKEN'];
+  const required = ['OPENROUTER_API_KEY', 'OPERATOR_AUTH_TOKEN'];
   const missing = required.filter((k) => !process.env[k]);
   if (missing.length > 0) {
     console.error(`[preflight] FAIL — missing: ${missing.join(', ')}`);
@@ -44,8 +45,10 @@ async function main(): Promise<void> {
     maxCycles: 5,
     v2IntervalSeconds: 0,
     controlIntervalSeconds: 0,
-    anthropicApiKey: reqEnv('RATER_API_KEY'),
-    raterModel: process.env['RATER_MODEL'] ?? 'claude-opus-4-7',
+    // Rater rides on OpenRouter — same key.
+    anthropicApiKey: reqEnv('OPENROUTER_API_KEY'),
+    raterModel: process.env['RATER_MODEL'] ?? 'anthropic/claude-3.5-sonnet',
+    raterCallImpl: callOpenRouterChat,
     raterIntervalMs: 5_000,
     operatorAuthToken: reqEnv('OPERATOR_AUTH_TOKEN'),
     publicUrlPrefix: process.env['DASHBOARD_PUBLIC_URL'] ?? 'http://localhost:8080',

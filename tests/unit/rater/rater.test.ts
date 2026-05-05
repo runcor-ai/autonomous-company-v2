@@ -78,3 +78,53 @@ describe('scoreAllUnscored', () => {
     store.close();
   });
 });
+
+describe('rater via OpenRouter (callOpenRouterChat)', () => {
+  it('calls /chat/completions and returns parsed text + token counts', async () => {
+    let captured: { url?: string; init?: RequestInit } = {};
+    const f = (async (url: unknown, init?: RequestInit) => {
+      captured = { url: url as string, ...(init !== undefined ? { init } : {}) };
+      return {
+        ok: true, status: 200, text: async () => '',
+        json: async () => ({
+          choices: [{ message: { role: 'assistant', content: '{"score":0.5,"rationale":"n/a"}' } }],
+          usage: { prompt_tokens: 120, completion_tokens: 40, total_tokens: 160 },
+        }),
+      } as Response;
+    }) as unknown as typeof fetch;
+    const { callOpenRouterChat } = await import('../../../src/rater/openrouter.js');
+    const r = await callOpenRouterChat({
+      apiKey: 'k', model: 'anthropic/claude-3.5-sonnet',
+      system: 'sys', user: 'usr',
+      fetchImpl: f,
+    });
+    expect(captured.url).toContain('/chat/completions');
+    expect((captured.init?.headers as Record<string, string>)['Authorization']).toBe('Bearer k');
+    const body = JSON.parse(captured.init!.body as string) as { messages: Array<{ role: string }> };
+    expect(body.messages.map((m) => m.role)).toEqual(['system', 'user']);
+    expect(r.text).toContain('"score":0.5');
+    expect(r.inputTokens).toBe(120);
+    expect(r.outputTokens).toBe(40);
+  });
+
+  it('plugs into scoreSummary as a drop-in replacement for callAnthropic', async () => {
+    const { callOpenRouterChat } = await import('../../../src/rater/openrouter.js');
+    const f = (async () => ({
+      ok: true, status: 200, text: async () => '',
+      json: async () => ({
+        choices: [{ message: { content: '{"score":-0.2,"rationale":"slightly off"}' } }],
+        usage: { prompt_tokens: 50, completion_tokens: 10, total_tokens: 60 },
+      }),
+    } as Response)) as unknown as typeof fetch;
+    const wrapped: typeof callOpenRouterChat = (input) => callOpenRouterChat({ ...input, fetchImpl: f });
+    const store = new Store(':memory:');
+    const sum = store.addSummary('v2', 1, 'a daily reflection');
+    const rec = await scoreSummary(sum, {
+      apiKey: 'k', model: 'anthropic/claude-3.5-sonnet', store,
+      callImpl: wrapped,
+    });
+    expect(rec.score).toBe(-0.2);
+    expect(rec.rationale).toBe('slightly off');
+    store.close();
+  });
+});

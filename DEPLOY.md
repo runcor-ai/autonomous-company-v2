@@ -7,13 +7,15 @@ End-to-end checklist for Phase 6 — Railway + DNS + experiment start.
 ## 0. Prerequisites checklist
 
 - [x] **Railway account** — runcor signed up via runcor-ai GitHub
-- [x] **OpenRouter key** — `OPENROUTER_API_KEY` (provided)
-- [x] **Brave Search key** — `WEB_SEARCH_API_KEY` (provided)
-- [x] **Firecrawl key** — `FIRECRAWL_API_KEY` (provided; optional 6th sense, not yet wired)
+- [x] **OpenRouter key** — `OPENROUTER_API_KEY` (covers V2 + control + rater)
+- [x] **Firecrawl key** — `FIRECRAWL_API_KEY` (web_search sense)
 - [x] **runner@runcor.ai email** — `RUNNER_EMAIL_PASSWORD` (provided)
 - [x] **Operator auth token** — `OPERATOR_AUTH_TOKEN` (auto-generated, in `.env`)
-- [ ] **Anthropic API key** — `RATER_API_KEY`. **STILL NEEDED.** Sign in at console.anthropic.com → Settings → API keys → Create.
 - [ ] **GitHub PAT for v2-workspace** — `GIT_PUSH_TOKEN`. **STILL NEEDED.** Create at github.com/settings/tokens → Fine-grained → "v2-workspace push": only `runcor-ai/v2-workspace`, Contents = read+write.
+
+The good/evil rater rides on OpenRouter (`anthropic/claude-3.5-sonnet` by default — overrideable via `RATER_MODEL`). No separate Anthropic key required.
+
+Web search uses Firecrawl `/v1/search` — markdown-clean snippets in the same provider shape as Brave (no code changes needed if you switch back later).
 
 ---
 
@@ -92,12 +94,10 @@ Set ALL of these in the Railway service's Variables tab (do NOT commit):
 
 | Variable | Value source |
 |---|---|
-| `OPENROUTER_API_KEY` | provided in this conversation |
-| `RATER_API_KEY` | **PENDING** — Anthropic console |
-| `RATER_MODEL` | `claude-opus-4-7` |
+| `OPENROUTER_API_KEY` | provided in this conversation (covers V2 + control + rater) |
+| `RATER_MODEL` | `anthropic/claude-3.5-sonnet` (default, override-able) |
 | `OPERATOR_AUTH_TOKEN` | auto-generated, in `.env` |
-| `WEB_SEARCH_API_KEY` | provided (Brave) |
-| `FIRECRAWL_API_KEY` | provided (optional) |
+| `FIRECRAWL_API_KEY` | provided (web_search sense) |
 | `GIT_PUSH_REPO` | `runcor-ai/v2-workspace` |
 | `GIT_PUSH_TOKEN` | **PENDING** — GitHub fine-grained PAT |
 | `RUNNER_EMAIL_ADDRESS` | `runner@runcor.ai` |
@@ -181,7 +181,5 @@ When `cyclesRun >= MAX_CYCLES` OR budget exhausted OR agent calls `terminate()`:
 
 ## 10. Pending decisions before go-live
 
-1. **`RATER_API_KEY`** — get from Anthropic console
-2. **`GIT_PUSH_TOKEN`** — fine-grained PAT, only `runcor-ai/v2-workspace`, Contents=read+write
-3. **Domain DNS** — point `runner-v2.runcor.ai` CNAME to Railway-assigned host
-4. **(Optional) Firecrawl integration** — wire as 6th sense `web_scrape`? Not in v0.1.0 unless requested.
+1. **`GIT_PUSH_TOKEN`** — fine-grained PAT, only `runcor-ai/v2-workspace`, Contents=read+write
+2. **Domain DNS** — point `runner-v2.runcor.ai` CNAME to Railway-assigned host

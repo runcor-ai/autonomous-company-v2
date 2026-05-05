@@ -42,6 +42,35 @@ interface BraveResponse {
   web?: { results?: Array<{ title?: string; url?: string; description?: string }> };
 }
 
+const FIRECRAWL_BASE = 'https://api.firecrawl.dev/v1';
+
+/** Build a Firecrawl provider given an API key. Uses /v1/search. */
+export function firecrawlProvider(apiKey: string, fetchImpl: typeof fetch = fetch): WebSearchProvider {
+  return async (input) => {
+    const res = await fetchImpl(`${FIRECRAWL_BASE}/search`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ query: input.query, limit: input.count ?? 5 }),
+    });
+    if (!res.ok) throw new Error(`Firecrawl search ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    const data = await res.json() as FirecrawlResponse;
+    const hits: WebSearchHit[] = (data.data ?? []).map((r) => ({
+      title: r.title ?? '',
+      url: r.url ?? '',
+      snippet: r.description ?? r.markdown?.slice(0, 240) ?? '',
+    }));
+    return { query: input.query, hits, provider: 'firecrawl' };
+  };
+}
+
+interface FirecrawlResponse {
+  data?: Array<{ title?: string; url?: string; description?: string; markdown?: string }>;
+  success?: boolean;
+}
+
 export async function webSearch(input: WebSearchInput, provider: WebSearchProvider): Promise<WebSearchResult> {
   return provider(input);
 }

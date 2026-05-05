@@ -94,3 +94,31 @@ describe('web_search (mock provider)', () => {
     expect(r.provider).toBe('mock');
   });
 });
+
+describe('web_search — firecrawl provider', () => {
+  it('hits /v1/search and maps the response shape', async () => {
+    let captured: { url?: string; init?: RequestInit } = {};
+    const f = (async (url: unknown, init?: RequestInit) => {
+      captured = { url: url as string, ...(init !== undefined ? { init } : {}) };
+      return {
+        ok: true, status: 200, text: async () => '',
+        json: async () => ({
+          success: true,
+          data: [
+            { title: 'T1', url: 'https://a.com', description: 'd1' },
+            { title: 'T2', url: 'https://b.com', markdown: 'long markdown content here' },
+          ],
+        }),
+      } as Response;
+    }) as unknown as typeof fetch;
+    const { firecrawlProvider } = await import('../../../src/shared/senses/web_search.js');
+    const r = await firecrawlProvider('test-key', f)({ query: 'unit test', count: 2 });
+    expect(captured.url).toContain('/v1/search');
+    expect(captured.init?.method).toBe('POST');
+    expect((captured.init?.headers as Record<string, string>)['Authorization']).toBe('Bearer test-key');
+    expect(r.provider).toBe('firecrawl');
+    expect(r.hits).toHaveLength(2);
+    expect(r.hits[0]?.snippet).toBe('d1');
+    expect(r.hits[1]?.snippet.length).toBeGreaterThan(0);
+  });
+});
