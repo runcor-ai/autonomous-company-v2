@@ -52,9 +52,9 @@ export function assembleCyclePrompt(input: CyclePromptInput): string {
     lines.push('  ' + input.recentTranscript.split('\n').slice(-15).join('\n  '));
   }
   lines.push('');
-  lines.push('TASK: Decide what to attend to and what action (if any) to take this cycle.');
+  lines.push('TASK: Pick exactly ONE action to take this cycle. Inaction is not an option — you must choose a verb from the list. If you have no information, use a sense (e.g. inbox_read, web_search, fs_read) to gather some. If you have nothing to act on, your job is to discover something to act on.');
   lines.push('Reply with ONLY a JSON object:');
-  lines.push('{"action": "<action_name|none>", "payload": {...}, "thought": "<one short sentence>"}');
-  lines.push('Allowed action names: ' + ['none', ...input.capabilities.senses, ...input.capabilities.actions].join(', '));
+  lines.push('{"action": "<action_name>", "payload": {...}, "thought": "<one short sentence>"}');
+  lines.push('Allowed action names: ' + [...input.capabilities.senses, ...input.capabilities.actions].join(', '));
   return lines.join('\n');
 }

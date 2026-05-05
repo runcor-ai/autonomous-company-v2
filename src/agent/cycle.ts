@@ -72,13 +72,50 @@ export async function runAgentCycle(input: AgentCycleInput): Promise<AgentCycleR
   const cycleRow = store.startCycle('v2', cycleNumber);
 
   try {
-    // 1. Compute drives.
+    // 1. Compute drives — feed all four (resource, curiosity, reactivity, coherence).
+    // Previously only resource was fed → curiosity/reactivity/coherence were undefined →
+    // emitted no pressure → agent had no internal reason to act → 32/45 cycles were 'none'.
+    const allActions = store.cyclesFor('v2').flatMap((c) => store.actionsFor(c.id));
+    const sensesUsed = new Set(allActions.map((a) => a.action).filter((a) => SENSES.includes(a)));
+    const senseCyclesAgo = (() => {
+      // Cycles since the agent last invoked any sense action (not 'none').
+      for (let i = allActions.length - 1; i >= 0; i--) {
+        if (SENSES.includes(allActions[i]!.action)) return cycleNumber - allActions[i]!.cycleId;
+      }
+      return cycleNumber;
+    })();
+
     const drives = harness.drivesCompute({
       resource: {
         remaining: input.budgetRemainingUsd,
         total: input.budgetRemainingUsd + (cycleNumber * input.burnPerCycleUsd),
         burnPerCycle: input.burnPerCycleUsd,
         cyclesUsed: cycleNumber,
+      },
+      curiosity: {
+        // Knows about all 5 senses; explored = those it has actually invoked.
+        // recentExplorationCycles grows the longer it ignores its senses.
+        knownAreas: SENSES,
+        exploredAreas: Array.from(sensesUsed),
+        recentExplorationCycles: senseCyclesAgo,
+      },
+      reactivity: {
+        // For Phase 6 we synthesize a "the world has been quiet" signal — every
+        // 10 cycles a low-urgency 'tick' event arrives. Once Phase 7 wires real
+        // inbox / webhook polling, replace with actual events.
+        pendingEvents: cycleNumber > 0 && cycleNumber % 10 === 0
+          ? [{ kind: 'cycle-tick', urgency: 'low' as const, age: 0 }]
+          : [],
+      },
+      coherence: {
+        // Compare self-theory claims against actually-taken non-'none' actions.
+        // If identity says "I observe and act" but every cycle was 'none',
+        // coherence pressure rises.
+        selfTheoryClaims: safeIdentityClaims(harness),
+        recentActions: allActions.slice(-10).map((a) => ({
+          action: a.action,
+          confidence: 0.7,
+        })),
       },
     });
 
@@ -199,5 +236,16 @@ function safeIdentityRender(harness: AgentHarness): string {
     return text || '(no self-theory yet — to be discovered)';
   } catch {
     return '(no self-theory yet — to be discovered)';
+  }
+}
+
+function safeIdentityClaims(harness: AgentHarness): string[] {
+  // Surface current self-theory claims for the coherence drive to compare
+  // against actions taken. Empty until the agent has reflected.
+  try {
+    const current = harness.identity.current() as { claims?: string[] } | undefined;
+    return current?.claims ?? [];
+  } catch {
+    return [];
   }
 }
