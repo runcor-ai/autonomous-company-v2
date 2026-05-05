@@ -195,12 +195,13 @@ NO endpoint to mutate agent memory, identity, goals, transcript, summaries, or d
 | 5 | External rater + daily summary scheduling + parallel-control orchestration | depends on Phase 4 |
 | 6 | Deployment + observability hookup + experiment start | depends on Phase 5 |
 
-## Decisions still open (require user sign-off in Phase 2 boundary)
+## Infrastructure decisions (locked 2026-05-05)
 
-1. **Dependency strategy** — Plan recommends Option B (git+https). Confirm before Phase 2 begins.
-2. **Hosting / infrastructure** — Where does V2 run? Railway? Fly.io? A single VPS? Required for Phase 6.
-3. **Email account** — Which dedicated address for `inbox_read` + `email_send`?
-4. **Public thoughts repo URL** — Which github.com/runcor-ai/* repo will the agent commit to via `git_commit_push`?
-5. **Mastodon/blog credentials** — Which account does `publish_post` write to?
-
-These are infrastructure decisions; Phase 2 can build mocked versions for testing while these are resolved.
+1. **Dependency strategy** — Option B: git+https URLs in package.json, commit-pinned (e.g. `"runcor-coherence": "github:runcor-ai/runcor-coherence#v0.1.0"`).
+2. **Hosting** — Railway. Three services: V2 agent process, control agent process, dashboard server.
+3. **Email** — `runner@runcor.ai` (existing account from V1). IMAP/SMTP via `mail.runcor.ai`. Credentials in `.env` (gitignored).
+4. **Subdomain** — `runner-v2.runcor.ai` (V1's `runner.runcor.ai` stays untouched as the V1 postmortem site).
+5. **Blog target for daily summaries** — dashboard-internal at `https://runner-v2.runcor.ai/blog/`. NOT runcor.ai/blog/ (brand blog) and NOT runner.runcor.ai/blog.html (V1 site). The agent's writing surface lives inside its own dashboard.
+6. **`git_commit_push` target** — TBD (3 options on the table — single dedicated workspace repo vs gh-API-via-http_post vs both).
+7. **`publish_post`** — writes to the dashboard's internal blog storage. No external Mastodon/social account in v0.1.0. (If observation shows the agent reaching for external broadcasting, that becomes a downstream capability grant.)
+8. **External rater** — Claude (`RATER_MODEL` in env, default `claude-opus-4-7`). Anthropic API key in `.env`.

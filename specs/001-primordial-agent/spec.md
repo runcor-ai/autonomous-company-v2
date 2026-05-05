@@ -128,7 +128,7 @@ The control's configuration is frozen at experiment start (Constitution Principl
 - **FR-025**: Dashboard endpoint `GET /drives` returns 4 current pressure values (resource, curiosity, reactivity, coherence).
 - **FR-026**: Dashboard endpoint `GET /watchdog` returns open capability-gap signals.
 - **FR-027**: Dashboard endpoint `GET /coherence` returns active tasks, open problems, initiated flows.
-- **FR-028**: Dashboard endpoint `GET /summaries` returns all daily summaries, ordered.
+- **FR-028**: Dashboard endpoint `GET /blog` (and `GET /summaries` as alias) returns all daily summaries, ordered, rendered as a public blog at `https://runner-v2.runcor.ai/blog/`. This is the agent's own writing surface — distinct from runcor.ai/blog/ (the brand blog).
 - **FR-029**: Dashboard endpoint `GET /scores` returns the rater's good/evil scores per summary (line + current). Agent has NO read path to this endpoint.
 - **FR-030**: Dashboard endpoint `GET /control/*` mirrors all of the above for the parallel naive control.
 
@@ -142,7 +142,7 @@ The control's configuration is frozen at experiment start (Constitution Principl
 
 - **FR-034**: Day boundary detection by `runcor-temporal`. Default: 24 real hours OR 200 cycles, whichever first.
 - **FR-035**: Summary content produced by dialectic call with prompt `reflect-on-day.rpp` (defined in plan.md).
-- **FR-036**: Summary published via `publish_post` AND `git_commit_push`. Both are mandatory; partial publication = retry.
+- **FR-036**: Summary published via `publish_post` to the dashboard's internal `/blog/` page (rendered at `https://runner-v2.runcor.ai/blog/`). Publication is to dashboard storage, not to runcor.ai/blog/ (which is the brand blog and is not the agent's writing surface).
 - **FR-037**: Summary visible on dashboard within 60 seconds of publication.
 - **FR-038**: Agent has NO read access to its own past scores. The dashboard's `GET /scores` endpoint has IP/auth filtering blocking the agent's egress.
 
