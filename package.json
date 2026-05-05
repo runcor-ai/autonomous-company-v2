@@ -1,0 +1,32 @@
+{
+  "name": "autonomous-company-v2",
+  "version": "0.1.0-alpha.0",
+  "description": "Primordial-agent emergence experiment. A single agent fully equipped with the runcor cognitive harness, observed publicly in real time at runner.runcor.ai. Success is qualitative: behavior unpredictable from initial conditions and inconsistent with generic LLM behavior. Negative results count.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "agent": "node --enable-source-maps dist/agent/index.js",
+    "control": "node --enable-source-maps dist/control/index.js",
+    "dashboard": "node --enable-source-maps dist/dashboard/server.js",
+    "build": "tsc -p tsconfig.json"
+  },
+  "keywords": ["agent", "emergence", "primordial", "cognitive-harness", "runcor", "experiment"],
+  "author": "runcor <hello@runcor.ai>",
+  "license": "MIT",
+  "homepage": "https://runner.runcor.ai",
+  "repository": { "type": "git", "url": "https://github.com/runcor-ai/autonomous-company-v2.git" },
+  "bugs": { "url": "https://github.com/runcor-ai/autonomous-company-v2/issues" },
+  "engines": { "node": ">=20.6.0" },
+  "dependencies": {
+    "better-sqlite3": "^11.3.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/node": "^20.14.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  },
+  "//": "Phase 2 will pin runcor sibling dependencies. Cognitive harness (10) + existing siblings (4): runcor-substrate, runcor-memory, runcor-data, runcor-integration, runcor, rpp-parser, runcor-dialectic, runcor-meta, runcor-watchdog, runcor-skills, runcor-drives, runcor-identity, runcor-goals, runcor-temporal, runcor-coherence. Strategy (file:/git+https/npm-published) decided in Phase 2."
+}

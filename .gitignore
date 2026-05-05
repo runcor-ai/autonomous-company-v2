@@ -1,0 +1,15 @@
+node_modules
+dist
+coverage
+*.log
+.DS_Store
+.vscode
+.idea
+*.tsbuildinfo
+*.db
+*.db-journal
+.env
+.env.local
+.env.*.local
+agent-state/
+control-state/
