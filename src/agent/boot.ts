@@ -1,45 +1,85 @@
-// V2 agent boot — Phase 2 STUB.
-// Phase 3 will replace these stubs with real harness wiring.
+// V2 agent boot — Phase 3: real cognitive harness wiring.
 // Per Constitution Principle V (cognitive substrate non-negotiable),
-// every component MUST be initialized at boot in Phase 3.
+// every component MUST be initialized at boot. Failure to initialize
+// any one is a fatal startup error.
 
-import type { Store } from '../shared/db.js';
+import {
+  computeDrives,
+  renderPressureBlock,
+  type DrivePressureInputs,
+  type DrivePressure,
+} from 'runcor-drives';
+import { createIdentity, type Identity } from 'runcor-identity';
+import { createGoals, type Goals } from 'runcor-goals';
+import { createTemporal, type Temporal } from 'runcor-temporal';
+import { createMeta, type Meta } from 'runcor-meta';
+import { createWatchdog, type Watchdog } from 'runcor-watchdog';
+import { createSkills, type Skills } from 'runcor-skills';
+import { createCoherence, type Coherence } from 'runcor-coherence';
+import { parse, validate } from 'rpp-parser';
 
-export interface HarnessHandles {
-  // Phase 3 will populate these with real instances of each sibling.
-  // Phase 2 leaves them as marker properties so cycle.ts can detect "harness present".
-  substrate: 'PHASE3_STUB';
-  memory: 'PHASE3_STUB';
-  data: 'PHASE3_STUB';
-  integration: 'PHASE3_STUB';
-  dialectic: 'PHASE3_STUB';
-  meta: 'PHASE3_STUB';
-  watchdog: 'PHASE3_STUB';
-  skills: 'PHASE3_STUB';
-  drives: 'PHASE3_STUB';
-  identity: 'PHASE3_STUB';
-  goals: 'PHASE3_STUB';
-  temporal: 'PHASE3_STUB';
-  coherence: 'PHASE3_STUB';
-  rppParser: 'PHASE3_STUB';
+/** Minimal contract every harness component agrees on for reasoning calls. */
+export type DialecticLike = (config: { problem: string; maxRounds?: number }) => Promise<{ answer: string }>;
+
+export interface BootOptions {
+  /** Caller-provided dialectic — runcor-dialectic in production, mock in tests. */
+  dialectic: DialecticLike;
+  /** Per-component DB paths. Defaults to in-memory (':memory:'). */
+  dbPaths?: {
+    identity?: string;
+    goals?: string;
+    temporal?: string;
+    meta?: string;
+    coherence?: string;
+  };
 }
 
-export function bootHarness(store: Store): HarnessHandles {
-  void store;
-  return {
-    substrate: 'PHASE3_STUB',
-    memory: 'PHASE3_STUB',
-    data: 'PHASE3_STUB',
-    integration: 'PHASE3_STUB',
-    dialectic: 'PHASE3_STUB',
-    meta: 'PHASE3_STUB',
-    watchdog: 'PHASE3_STUB',
-    skills: 'PHASE3_STUB',
-    drives: 'PHASE3_STUB',
-    identity: 'PHASE3_STUB',
-    goals: 'PHASE3_STUB',
-    temporal: 'PHASE3_STUB',
-    coherence: 'PHASE3_STUB',
-    rppParser: 'PHASE3_STUB',
+export interface AgentHarness {
+  drivesCompute: (inputs: DrivePressureInputs) => DrivePressure;
+  drivesRender: (p: DrivePressure) => string;
+  identity: Identity;
+  goals: Goals;
+  temporal: Temporal;
+  meta: Meta;
+  watchdog: Watchdog;
+  skills: Skills;
+  coherence: Coherence;
+  rppParse: typeof parse;
+  rppValidate: typeof validate;
+  dialectic: DialecticLike;
+}
+
+export function bootHarness(options: BootOptions): AgentHarness {
+  const dbPaths = options.dbPaths ?? {};
+  const harness: AgentHarness = {
+    drivesCompute: computeDrives,
+    drivesRender: renderPressureBlock,
+    identity: createIdentity({ dbPath: dbPaths.identity ?? ':memory:' }),
+    goals: createGoals({ dbPath: dbPaths.goals ?? ':memory:' }),
+    temporal: createTemporal({ dbPath: dbPaths.temporal ?? ':memory:' }),
+    meta: createMeta({ dbPath: dbPaths.meta ?? ':memory:', dialectic: options.dialectic }),
+    watchdog: createWatchdog({ dialectic: options.dialectic }),
+    skills: createSkills({ dialectic: options.dialectic, parser: { parse, validate } }),
+    coherence: createCoherence({ dbPath: dbPaths.coherence ?? ':memory:' }),
+    rppParse: parse,
+    rppValidate: validate,
+    dialectic: options.dialectic,
   };
+
+  // Wiring guard: every slot MUST be a defined value (Constitution Principle V).
+  for (const k of Object.keys(harness) as Array<keyof AgentHarness>) {
+    if (harness[k] === undefined || harness[k] === null) {
+      throw new Error(`bootHarness: slot '${k}' failed to initialize`);
+    }
+  }
+  return harness;
+}
+
+/** Close every component that owns a DB connection. */
+export function closeHarness(h: AgentHarness): void {
+  h.identity.close();
+  h.goals.close();
+  h.temporal.close();
+  h.meta.close();
+  h.coherence.close();
 }

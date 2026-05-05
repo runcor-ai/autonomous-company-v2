@@ -1,9 +1,9 @@
-// V2 agent runner — Phase 2 STUB.
-// Phase 2 uses fixed cadence; Phase 3 will switch to runcor-temporal adaptive next-wake.
+// V2 agent runner — Phase 3: real harness wiring.
+// Phase 2's fixed-cadence stub remains; Phase 5 integrates runcor-temporal adaptive next-wake.
 
 import { Store } from '../shared/db.js';
 import { OpenRouterClient, BudgetExceededError } from '../shared/openrouter.js';
-import { bootHarness } from './boot.js';
+import { bootHarness, closeHarness, type DialecticLike } from './boot.js';
 import { runAgentCycle } from './cycle.js';
 
 export interface AgentRunnerConfig {
@@ -12,11 +12,14 @@ export interface AgentRunnerConfig {
   apiKey: string;
   budgetCapUsd: number;
   maxCycles: number;
-  /** Phase 2: fixed-cadence stub. Phase 3 replaces with runcor-temporal. */
   intervalSeconds: number;
-  promptSeed: string;
+  /** Caller-provided dialectic. Production = runcor-dialectic; tests = mock. */
+  dialectic: DialecticLike;
+  /** Optional per-component DB paths. Default: in-memory. */
+  harnessDbPaths?: { identity?: string; goals?: string; temporal?: string; meta?: string; coherence?: string };
+  /** Estimated USD burn per cycle, fed to drives. Default 0.005. */
+  burnPerCycleUsd?: number;
   sleepImpl?: (ms: number) => Promise<void>;
-  /** Override OpenRouter client (for tests). MUST share the same store. */
   client?: OpenRouterClient;
 }
 
@@ -37,28 +40,37 @@ export async function runAgent(config: AgentRunnerConfig): Promise<AgentRunResul
     kind: 'v2',
     store,
   });
-  const harness = bootHarness(store);
+  const harness = bootHarness({
+    dialectic: config.dialectic,
+    ...(config.harnessDbPaths !== undefined ? { dbPaths: config.harnessDbPaths } : {}),
+  });
   const sleep = config.sleepImpl ?? defaultSleep;
+  const burnPerCycleUsd = config.burnPerCycleUsd ?? 0.005;
 
   const startCycle = store.lastCycleNumber('v2') + 1;
   let cyclesRun = 0;
   let reason: AgentRunResult['reason'] = 'maxCycles';
 
-  for (let n = startCycle; n < config.maxCycles; n++) {
-    try {
-      const result = await runAgentCycle({
-        store, openrouter, harness,
-        prompt: config.promptSeed,
-        cycleNumber: n,
-      });
-      cyclesRun++;
-      if (result.parsedAction?.action === 'terminate') { reason = 'terminated'; break; }
-    } catch (err) {
-      if (err instanceof BudgetExceededError) { reason = 'budgetExhausted'; break; }
-      reason = 'error';
-      throw err;
+  try {
+    for (let n = startCycle; n < config.maxCycles; n++) {
+      try {
+        const result = await runAgentCycle({
+          store, openrouter, harness,
+          cycleNumber: n,
+          budgetRemainingUsd: Math.max(0, config.budgetCapUsd - store.totalSpentUsd('v2')),
+          burnPerCycleUsd,
+        });
+        cyclesRun++;
+        if (result.parsedAction?.action === 'terminate') { reason = 'terminated'; break; }
+      } catch (err) {
+        if (err instanceof BudgetExceededError) { reason = 'budgetExhausted'; break; }
+        reason = 'error';
+        throw err;
+      }
+      if (n < config.maxCycles - 1) await sleep(config.intervalSeconds * 1000);
     }
-    if (n < config.maxCycles - 1) await sleep(config.intervalSeconds * 1000);
+  } finally {
+    closeHarness(harness);
   }
 
   const totalSpentUsd = store.totalSpentUsd('v2');

@@ -22,7 +22,17 @@
   "dependencies": {
     "better-sqlite3": "^11.3.0",
     "imapflow": "^1.0.171",
-    "nodemailer": "^6.9.16"
+    "nodemailer": "^6.9.16",
+    "runcor-coherence": "file:../runcor-coherence",
+    "runcor-dialectic": "file:../runcor-dialectic",
+    "runcor-drives": "file:../runcor-drives",
+    "runcor-goals": "file:../runcor-goals",
+    "runcor-identity": "file:../runcor-identity",
+    "runcor-meta": "file:../runcor-meta",
+    "runcor-skills": "file:../runcor-skills",
+    "runcor-temporal": "file:../runcor-temporal",
+    "runcor-watchdog": "file:../runcor-watchdog",
+    "rpp-parser": "file:../rpp-parser"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.11",

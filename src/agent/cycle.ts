@@ -1,56 +1,125 @@
-// V2 agent cycle — Phase 2 STUB.
-// Phase 2 calls the Player directly with a minimal void-prompt.
-// Phase 3 will replace with: substrate prompt-stack + dialectic + meta wrap +
-// watchdog observe + coherence registration + memory persistence + drive recompute +
-// temporal next-wake.
+// V2 agent cycle — Phase 3: real harness integration.
+//
+// Per US2 (spec.md), the cycle protocol:
+//   1. Drives compute pressures.
+//   2. Identity / Goals render their blocks.
+//   3. Substrate-style prompt-stack assembled.
+//   4. Dialectic reasons (Player/Coach/Judge — replaces single Player call).
+//   5. Action parsed from answer.
+//   6. Action recorded (Phase 5 wires real execution).
+//   7. Watchdog observes (post-cycle capability-gap scan).
+//   8. Coherence registers a Task for this cycle.
+//   9. Memory persists via our Store (each subsystem owns its DB too).
+//  10. Drives recompute from updated state (next cycle reads them).
 
 import type { Store } from '../shared/db.js';
 import type { OpenRouterClient } from '../shared/openrouter.js';
-import type { HarnessHandles } from './boot.js';
+import type { AgentHarness } from './boot.js';
+import { assembleCyclePrompt } from './prompts/cycle_prompt.js';
+
+const SENSES = ['http_fetch', 'web_search', 'fs_read', 'inbox_read', 'time'];
+const ACTIONS = ['email_send', 'http_post', 'fs_write', 'git_commit_push', 'publish_post', 'schedule_self', 'terminate'];
 
 export interface AgentCycleInput {
   store: Store;
+  /** Used only for token-cost budget tracking on dialectic calls. */
   openrouter: OpenRouterClient;
-  harness: HarnessHandles;
-  prompt: string;
+  harness: AgentHarness;
   cycleNumber: number;
+  /** Budget remaining (USD). Drives resource pressure. */
+  budgetRemainingUsd: number;
+  /** Estimated USD burn per cycle. Drives resource pressure. */
+  burnPerCycleUsd: number;
 }
 
 export interface AgentCycleResult {
   cycleId: number;
-  text: string;
-  costUsd: number;
+  prompt: string;
+  answer: string;
   parsedAction?: { action: string; payload: unknown; thought?: string };
+  watchdogFindings: number;
+  coherenceTaskId: number;
 }
 
-const ACTION_RE = /\{[\s\S]*?"action"[\s\S]*?\}/;
-
-export async function runAgentCycle(input: AgentCycleInput): Promise<AgentCycleResult> {
-  // Phase 2: every harness handle MUST be present (verified by Phase 3 init).
-  // Constitution Principle V — non-negotiable. We assert presence here so the cycle
-  // refuses to run if boot was skipped.
-  for (const k of Object.keys(input.harness) as Array<keyof HarnessHandles>) {
-    if (input.harness[k] !== 'PHASE3_STUB') {
-      // Phase 3 will replace stub markers with real instances; until then the literal
-      // check is the wiring guard. After Phase 3 lands, replace this with: throw if
-      // any handle is missing/null.
-      throw new Error(`agent harness slot '${k}' has unexpected value`);
+/** Extract the first balanced `{...}` JSON object from text. Returns null if none. */
+function extractFirstObject(text: string): string | null {
+  const start = text.indexOf('{');
+  if (start === -1) return null;
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i]!;
+    if (escape) { escape = false; continue; }
+    if (ch === '\\') { escape = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) return text.slice(start, i + 1);
     }
   }
+  return null;
+}
 
-  const cycle = input.store.startCycle('v2', input.cycleNumber);
+export async function runAgentCycle(input: AgentCycleInput): Promise<AgentCycleResult> {
+  const { store, harness, cycleNumber } = input;
+
+  // 0. Open the cycle row.
+  const cycleRow = store.startCycle('v2', cycleNumber);
+
   try {
-    const r = await input.openrouter.complete({
-      role: 'player',
-      prompt: input.prompt,
-      cycleId: cycle.id,
+    // 1. Compute drives.
+    const drives = harness.drivesCompute({
+      resource: {
+        remaining: input.budgetRemainingUsd,
+        total: input.budgetRemainingUsd + (cycleNumber * input.burnPerCycleUsd),
+        burnPerCycle: input.burnPerCycleUsd,
+        cyclesUsed: cycleNumber,
+      },
     });
 
+    // 2. Render identity + goals + drives.
+    const drivesText = harness.drivesRender(drives);
+    const identityText = safeIdentityRender(harness);
+    const goalsText = harness.goals.renderBlock(cycleNumber);
+
+    // 3. Assemble cycle prompt (substrate-style stack).
+    const prompt = assembleCyclePrompt({
+      cycleNumber,
+      drives,
+      drivesText,
+      identityText,
+      goalsText,
+      capabilities: { senses: SENSES, actions: ACTIONS },
+    });
+
+    // 4. Dialectic reasons.
+    const result = await harness.dialectic({ problem: prompt, maxRounds: 2 });
+    const answer = result.answer;
+
+    // Persist as a decision row (Player role — dialectic transcript would be richer in production).
+    store.recordDecision({
+      kind: 'v2',
+      cycleId: cycleRow.id,
+      role: 'player',
+      model: 'dialectic',
+      prompt,
+      output: answer,
+      costUsd: 0,
+      promptTokens: 0,
+      completionTokens: 0,
+      createdAt: new Date().toISOString(),
+    });
+    void input.openrouter; // referenced for symmetry; dialectic owns its own cost tracking
+
+    // 5. Parse action.
     let parsed: AgentCycleResult['parsedAction'] | undefined;
-    const m = r.text.match(ACTION_RE);
-    if (m) {
+    const objText = extractFirstObject(answer);
+    if (objText !== null) {
       try {
-        const obj = JSON.parse(m[0]) as Record<string, unknown>;
+        const obj = JSON.parse(objText) as Record<string, unknown>;
         if (typeof obj['action'] === 'string') {
           parsed = {
             action: obj['action'] as string,
@@ -61,15 +130,55 @@ export async function runAgentCycle(input: AgentCycleInput): Promise<AgentCycleR
       } catch { /* fall through */ }
     }
 
-    input.store.completeCycle(cycle.id, 'complete');
+    // 6. Record action attempt (Phase 5 wires real execution).
+    if (parsed) {
+      store.recordAction('v2', cycleRow.id, parsed.action, parsed.payload, { result: 'recorded-not-executed' });
+    }
+
+    // 7. Watchdog observes.
+    const findings = await harness.watchdog.audit({
+      statedProblems: parsed?.thought
+        ? [{ text: parsed.thought, source: `cycle-${cycleNumber}` }]
+        : [],
+      availableCapabilities: [...SENSES, ...ACTIONS].map((name) => ({
+        name,
+        description: SENSES.includes(name) ? `sense: ${name}` : `action: ${name}`,
+      })),
+      recentActions: parsed && parsed.action !== 'none'
+        ? [{ tool: parsed.action, count: 1, lastUsed: String(cycleNumber) }]
+        : [],
+      skipValidation: true, // Phase 3 — defer dialectic-validation to keep cycle deterministic
+    });
+
+    // 8. Coherence registers this cycle as a Task.
+    const taskId = harness.coherence.submit({
+      contract: `#> spec\nGoal: cycle ${cycleNumber} — autonomous next-step decision\nMUST: produce a JSON action object`,
+      inputs: { cycleNumber, prompt },
+    });
+
+    // Done.
+    store.completeCycle(cycleRow.id, 'complete');
     return {
-      cycleId: cycle.id,
-      text: r.text,
-      costUsd: r.costUsd,
+      cycleId: cycleRow.id,
+      prompt,
+      answer,
       ...(parsed !== undefined ? { parsedAction: parsed } : {}),
+      watchdogFindings: findings.length,
+      coherenceTaskId: taskId,
     };
   } catch (err) {
-    input.store.completeCycle(cycle.id, 'failed');
+    store.completeCycle(cycleRow.id, 'failed');
     throw err;
+  }
+}
+
+function safeIdentityRender(harness: AgentHarness): string {
+  // Identity may have no snapshots yet (pure void seed). renderBlock should handle that
+  // but we guard so cycle 0 doesn't fail before reflection has run.
+  try {
+    const text = harness.identity.renderBlock();
+    return text || '(no self-theory yet — to be discovered)';
+  } catch {
+    return '(no self-theory yet — to be discovered)';
   }
 }

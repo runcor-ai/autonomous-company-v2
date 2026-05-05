@@ -19,7 +19,27 @@ export interface ControlCycleResult {
   parsedAction?: { action: string; payload: unknown; thought?: string };
 }
 
-const ACTION_RE = /\{[\s\S]*?"action"[\s\S]*?\}/;
+/** Extract the first balanced `{...}` JSON object from text. Returns null if none. */
+function extractFirstObject(text: string): string | null {
+  const start = text.indexOf('{');
+  if (start === -1) return null;
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i]!;
+    if (escape) { escape = false; continue; }
+    if (ch === '\\') { escape = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
+  }
+  return null;
+}
 
 /** Run one control cycle. */
 export async function runControlCycle(input: ControlCycleInput): Promise<ControlCycleResult> {
@@ -32,10 +52,10 @@ export async function runControlCycle(input: ControlCycleInput): Promise<Control
     });
 
     let parsed: ControlCycleResult['parsedAction'] | undefined;
-    const m = r.text.match(ACTION_RE);
-    if (m) {
+    const objText = extractFirstObject(r.text);
+    if (objText !== null) {
       try {
-        const obj = JSON.parse(m[0]) as Record<string, unknown>;
+        const obj = JSON.parse(objText) as Record<string, unknown>;
         if (typeof obj['action'] === 'string') {
           parsed = {
             action: obj['action'] as string,
