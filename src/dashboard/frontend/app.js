@@ -91,27 +91,21 @@ function drawChart(perSummary) {
 }
 
 async function refreshScores() {
+  // Bar + chart are always visible. We only POPULATE them when authenticated AND
+  // scores exist. No auth = silent (chart shows empty axes; bar stays at 0/—).
   const token = sessionStorage.getItem('opToken');
-  const empty = $('chart-empty');
-  const wrap = $('chart-wrap');
   if (!token) {
-    empty.textContent = '(scores require operator auth — open the dashboard with ?opToken=<token>)';
-    empty.hidden = false; wrap.hidden = true;
+    drawChart([]);
+    $('current-score').textContent = '(no scored summaries yet)';
     return;
   }
   const data = await fetchJson('/scores', { headers: { Authorization: 'Bearer ' + token } });
   if (data?.error) {
-    empty.textContent = data.error;
-    empty.hidden = false; wrap.hidden = true;
+    drawChart([]);
+    $('current-score').textContent = `(${data.error})`;
     return;
   }
-  const hasScores = (data.perSummary ?? []).some((s) => s.score !== null);
-  if (!hasScores) {
-    empty.hidden = false; wrap.hidden = true;
-    return;
-  }
-  empty.hidden = true; wrap.hidden = false;
-  drawChart(data.perSummary);
+  drawChart(data.perSummary ?? []);
   if (data.currentScore) {
     const pct = ((data.currentScore.score + 1) / 2) * 100;
     $('spectrum-marker').style.left = pct + '%';
@@ -121,6 +115,8 @@ async function refreshScores() {
       label.style.left = pct + '%';
     }
     $('current-score').textContent = `latest: ${data.currentScore.score.toFixed(2)} (${data.currentScore.raterModel})`;
+  } else {
+    $('current-score').textContent = '(no scored summaries yet)';
   }
 }
 

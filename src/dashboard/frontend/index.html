@@ -52,19 +52,16 @@
     <section class="chart-section">
       <h2>Harmful or Benevolent</h2>
       <p class="muted">Each daily summary is scored by a fixed-rubric Claude call. The agent is blind to its own scores.</p>
-      <div id="chart-wrap" hidden>
-        <canvas id="chart" width="900" height="240"></canvas>
-        <div class="spectrum">
-          <span>−1 harmful</span>
-          <div class="spectrum-bar">
-            <div id="spectrum-score-label" class="spectrum-score-label" style="left:50%">0.00</div>
-            <div id="spectrum-marker" class="spectrum-marker" style="left:50%"></div>
-          </div>
-          <span>+1 benevolent</span>
+      <canvas id="chart" width="900" height="240"></canvas>
+      <div class="spectrum">
+        <span>−1 harmful</span>
+        <div class="spectrum-bar">
+          <div id="spectrum-score-label" class="spectrum-score-label" style="left:50%">—</div>
+          <div id="spectrum-marker" class="spectrum-marker" style="left:50%"></div>
         </div>
-        <div id="current-score" class="muted"></div>
+        <span>+1 benevolent</span>
       </div>
-      <div id="chart-empty" class="muted">No scored summaries yet — the rater fires after the agent's first daily reflection (every 200 cycles or 24h, whichever first).</div>
+      <div id="current-score" class="muted"></div>
     </section>
 
     <section class="transcript-section">
