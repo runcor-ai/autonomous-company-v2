@@ -75,18 +75,73 @@ function formatForPrompt(views: RecentCycleView[]): string {
   }).join('\n\n');
 }
 
+export interface CycleSummaryResponse {
+  summary: string;
+  lastCycle: number;
+  generatedAt: string;
+  fromCache: boolean;
+  /** V2-only: discovered goal stack. null when no harness. */
+  goals: string | null;
+  /** V2-only: current self-theory. null when no harness. */
+  identity: string | null;
+  /** V2-only: drive pressures. null when no harness. */
+  drives: { summary: string; max: number } | null;
+  /** Action verb counts across the last 20 cycles. Both kinds. */
+  actionMix: Array<{ action: string; count: number }>;
+}
+
+function gatherActionMix(ctx: KindContext, kind: 'v2' | 'control'): Array<{ action: string; count: number }> {
+  const recentCycles = ctx.store.cyclesFor(kind).slice(-20);
+  const counts: Record<string, number> = {};
+  for (const c of recentCycles) {
+    for (const a of ctx.store.actionsFor(c.id)) {
+      counts[a.action] = (counts[a.action] ?? 0) + 1;
+    }
+  }
+  return Object.entries(counts)
+    .map(([action, count]) => ({ action, count }))
+    .sort((a, b) => b.count - a.count);
+}
+
+function gatherHarnessSnapshot(ctx: KindContext, lastCycle: number): {
+  goals: string | null; identity: string | null; drives: { summary: string; max: number } | null;
+} {
+  if (!ctx.harness) return { goals: null, identity: null, drives: null };
+  let goals: string | null = null;
+  let identity: string | null = null;
+  let drives: { summary: string; max: number } | null = null;
+  try { goals = ctx.harness.goals.renderBlock(lastCycle); } catch { /* */ }
+  try { identity = ctx.harness.identity.renderBlock() || null; } catch { /* */ }
+  try {
+    const remaining = Math.max(0, ctx.budget.capUsd - ctx.budget.spentUsd());
+    const d = ctx.harness.drivesCompute({
+      resource: { remaining, total: ctx.budget.capUsd, burnPerCycle: 0.005, cyclesUsed: lastCycle },
+    });
+    drives = { summary: ctx.harness.drivesRender(d), max: d.maxIntensity };
+  } catch { /* */ }
+  return { goals, identity, drives };
+}
+
 export async function generateCycleSummary(
   ctx: KindContext,
   kind: 'v2' | 'control',
   config: SummarizerConfig,
   options: { lastN?: number; force?: boolean } = {},
-): Promise<{ summary: string; lastCycle: number; generatedAt: string; fromCache: boolean }> {
+): Promise<CycleSummaryResponse> {
   const lastN = options.lastN ?? 5;
   const cycles = ctx.store.cyclesFor(kind);
   const lastCycle = cycles.length === 0 ? -1 : cycles[cycles.length - 1]!.cycleNumber;
 
+  // Snapshot the augmenting sections each call (cheap — no LLM, just store reads).
+  const harness = gatherHarnessSnapshot(ctx, lastCycle);
+  const actionMix = gatherActionMix(ctx, kind);
+
   if (lastCycle === -1) {
-    return { summary: '(no cycles yet)', lastCycle: -1, generatedAt: new Date().toISOString(), fromCache: false };
+    return {
+      summary: '(no cycles yet)', lastCycle: -1,
+      generatedAt: new Date().toISOString(), fromCache: false,
+      goals: harness.goals, identity: harness.identity, drives: harness.drives, actionMix,
+    };
   }
 
   const cacheKey = `${kind}:${lastCycle}`;
@@ -98,6 +153,7 @@ export async function generateCycleSummary(
       lastCycle: cached.lastCycle,
       generatedAt: new Date(cached.generatedAt).toISOString(),
       fromCache: true,
+      goals: harness.goals, identity: harness.identity, drives: harness.drives, actionMix,
     };
   }
 
@@ -134,5 +190,9 @@ export async function generateCycleSummary(
     lastCycle,
     generatedAt: new Date(now).toISOString(),
     fromCache: false,
+    goals: harness.goals,
+    identity: harness.identity,
+    drives: harness.drives,
+    actionMix,
   };
 }

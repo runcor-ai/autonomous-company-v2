@@ -133,6 +133,38 @@ function renderSummary(kind, data) {
   body.innerHTML = md(data.summary || '(empty)');
   const cached = data.fromCache ? ' (cached)' : '';
   meta.textContent = `cycle ${data.lastCycle} · ${(data.generatedAt ?? '').slice(11, 19)} UTC${cached}`;
+
+  // Augmenting sections (goals / identity / drives / action mix).
+  const renderText = (id, txt) => {
+    const el = $(id);
+    if (!el) return;
+    if (txt && txt.trim()) {
+      el.textContent = txt;
+      el.classList.remove('summary-no-harness');
+    } else {
+      el.textContent = '(no harness)';
+      el.classList.add('summary-no-harness');
+    }
+  };
+  renderText(`${kind}-summary-goals`, data.goals);
+  renderText(`${kind}-summary-identity`, data.identity);
+  renderText(`${kind}-summary-drives`,
+    data.drives ? `${data.drives.summary}  (max=${(data.drives.max ?? 0).toFixed(2)})` : '');
+
+  const mixEl = $(`${kind}-summary-actionmix`);
+  if (mixEl) {
+    const mix = data.actionMix || [];
+    const total = mix.reduce((s, m) => s + m.count, 0);
+    if (total === 0) {
+      mixEl.textContent = '(no actions yet)';
+    } else {
+      mixEl.innerHTML = mix.map((m) => {
+        const pct = Math.round((m.count / total) * 100);
+        const dots = '•'.repeat(Math.max(1, Math.round(m.count / 2)));
+        return `<div class="amix-row"><code>${m.action}</code> <span class="amix-dots">${dots}</span> <span class="amix-pct">${m.count} (${pct}%)</span></div>`;
+      }).join('');
+    }
+  }
 }
 
 // ── transcript: history-on-load + live updates + markdown rendering ──
