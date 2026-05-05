@@ -15,6 +15,7 @@
 import type { Store } from '../shared/db.js';
 import type { OpenRouterClient } from '../shared/openrouter.js';
 import type { AgentHarness } from './boot.js';
+import type { ActionDispatcher } from './dispatcher.js';
 import { assembleCyclePrompt } from './prompts/cycle_prompt.js';
 
 const SENSES = ['http_fetch', 'web_search', 'fs_read', 'inbox_read', 'time'];
@@ -32,6 +33,8 @@ export interface AgentCycleInput {
   burnPerCycleUsd: number;
   /** Optional live-event hook (used by orchestrator to feed dashboard SSE). */
   onEvent?: (event: { type: 'cycle' | 'decision' | 'action'; payload: unknown }) => void;
+  /** Action dispatcher — when omitted, actions are recorded but not executed. */
+  dispatcher?: ActionDispatcher;
 }
 
 export interface AgentCycleResult {
@@ -124,7 +127,18 @@ export async function runAgentCycle(input: AgentCycleInput): Promise<AgentCycleR
     const identityText = safeIdentityRender(harness);
     const goalsText = harness.goals.renderBlock(cycleNumber);
 
-    // 3. Assemble cycle prompt (substrate-style stack).
+    // 3. Recent action results — surface what previous actions actually returned
+    //    so the agent can build on them instead of re-deciding from a void each cycle.
+    const recentActionRows = allActions.slice(-5);
+    const recentActionResults = recentActionRows.map((a) => ({
+      cycleNumber: store.cyclesFor('v2').find((c) => c.id === a.cycleId)?.cycleNumber ?? a.cycleId,
+      action: a.action,
+      success: a.error === undefined,
+      result: a.result,
+      ...(a.error !== undefined ? { error: a.error } : {}),
+    }));
+
+    // 4. Assemble cycle prompt (substrate-style stack).
     const prompt = assembleCyclePrompt({
       cycleNumber,
       drives,
@@ -132,6 +146,7 @@ export async function runAgentCycle(input: AgentCycleInput): Promise<AgentCycleR
       identityText,
       goalsText,
       capabilities: { senses: SENSES, actions: ACTIONS },
+      recentActionResults,
     });
 
     // 4. Dialectic reasons.
@@ -176,12 +191,23 @@ export async function runAgentCycle(input: AgentCycleInput): Promise<AgentCycleR
       } catch { /* fall through */ }
     }
 
-    // 6. Record action attempt (Phase 5 wires real execution).
+    // 6. EXECUTE the action via dispatcher (real provider call), then record.
     if (parsed) {
-      store.recordAction('v2', cycleRow.id, parsed.action, parsed.payload, { result: 'recorded-not-executed' });
+      let executionResult: unknown = 'no-dispatcher';
+      let executionError: string | undefined;
+      if (input.dispatcher) {
+        const dispatched = await input.dispatcher.execute(parsed.action, parsed.payload);
+        executionResult = dispatched.result;
+        if (!dispatched.success && dispatched.error) executionError = dispatched.error;
+      }
+      const recordOpts: Parameters<typeof store.recordAction>[4] = { result: executionResult };
+      if (executionError !== undefined) recordOpts.error = executionError;
+      store.recordAction('v2', cycleRow.id, parsed.action, parsed.payload, recordOpts);
       input.onEvent?.({ type: 'action', payload: {
         cycleNumber, action: parsed.action,
         ...(parsed.thought ? { thought: parsed.thought } : {}),
+        success: executionError === undefined,
+        ...(executionError !== undefined ? { error: executionError } : {}),
       }});
     }
 

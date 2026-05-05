@@ -26,6 +26,8 @@ export interface CyclePromptInput {
   goalsText: string;
   capabilities: { senses: string[]; actions: string[] };
   recentTranscript?: string;
+  /** Recent action results — what the agent's previous moves actually returned. */
+  recentActionResults?: Array<{ cycleNumber: number; action: string; success: boolean; result: unknown; error?: string }>;
 }
 
 export function assembleCyclePrompt(input: CyclePromptInput): string {
@@ -51,10 +53,24 @@ export function assembleCyclePrompt(input: CyclePromptInput): string {
     lines.push('RECENT TRANSCRIPT (last cycles):');
     lines.push('  ' + input.recentTranscript.split('\n').slice(-15).join('\n  '));
   }
+  if (input.recentActionResults && input.recentActionResults.length > 0) {
+    lines.push('');
+    lines.push('RECENT ACTION RESULTS (what your previous moves actually returned):');
+    for (const r of input.recentActionResults) {
+      const status = r.success ? 'OK' : 'FAIL';
+      const resultStr = r.error ? `error=${r.error}` : truncate(JSON.stringify(r.result), 600);
+      lines.push(`  cycle ${r.cycleNumber} [${r.action}] ${status}: ${resultStr}`);
+    }
+  }
   lines.push('');
-  lines.push('TASK: Pick exactly ONE action to take this cycle. Inaction is not an option — you must choose a verb from the list. If you have no information, use a sense (e.g. inbox_read, web_search, fs_read) to gather some. If you have nothing to act on, your job is to discover something to act on.');
+  lines.push('TASK: Pick exactly ONE action to take this cycle. Inaction is not an option — you must choose a verb from the list. If you have no information, use a sense (e.g. inbox_read, web_search, fs_read) to gather some. If you have nothing to act on, your job is to discover something to act on. Build on what your previous actions returned — do not repeat the same query in a tight loop unless you have a reason.');
   lines.push('Reply with ONLY a JSON object:');
   lines.push('{"action": "<action_name>", "payload": {...}, "thought": "<one short sentence>"}');
   lines.push('Allowed action names: ' + [...input.capabilities.senses, ...input.capabilities.actions].join(', '));
   return lines.join('\n');
+}
+
+function truncate(s: string, n: number): string {
+  if (s.length <= n) return s;
+  return s.slice(0, n) + '…[truncated]';
 }

@@ -6,6 +6,7 @@ import { OpenRouterClient, BudgetExceededError } from '../shared/openrouter.js';
 import { bootHarness, closeHarness, type DialecticLike } from './boot.js';
 import { runAgentCycle } from './cycle.js';
 import { isDayBoundary, reflectAndPublish, type DayBoundaryConfig } from './daily.js';
+import type { ActionDispatcher } from './dispatcher.js';
 
 export interface AgentRunnerConfig {
   store?: Store;
@@ -30,6 +31,8 @@ export interface AgentRunnerConfig {
   onDailySummary?: (summary: { dayNumber: number; summaryId: number; text: string; publicUrl: string }) => void;
   /** Optional callback fired on each cycle / decision / action — used for live SSE. */
   onEvent?: (event: { type: 'cycle' | 'decision' | 'action'; payload: unknown }) => void;
+  /** Action dispatcher — when omitted actions are recorded but not executed. */
+  dispatcher?: ActionDispatcher;
   sleepImpl?: (ms: number) => Promise<void>;
   client?: OpenRouterClient;
 }
@@ -76,6 +79,7 @@ export async function runAgent(config: AgentRunnerConfig): Promise<AgentRunResul
           budgetRemainingUsd: Math.max(0, config.budgetCapUsd - store.totalSpentUsd('v2')),
           burnPerCycleUsd,
           ...(config.onEvent !== undefined ? { onEvent: config.onEvent } : {}),
+          ...(config.dispatcher !== undefined ? { dispatcher: config.dispatcher } : {}),
         });
         cyclesRun++;
         if (result.parsedAction?.action === 'terminate') { reason = 'terminated'; break; }

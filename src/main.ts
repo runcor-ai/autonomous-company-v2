@@ -85,6 +85,33 @@ async function main(): Promise<void> {
       meta:      `${harnessDbDir}/meta.db`,
       coherence: `${harnessDbDir}/coherence.db`,
     },
+    // Action dispatcher — credentials for senses + outward actions.
+    dispatcher: {
+      fsRoot: optEnv('AGENT_FS_ROOT', `${harnessDbDir}/scratchpad`)!,
+      ...(optEnv('FIRECRAWL_API_KEY') ? { firecrawlApiKey: optEnv('FIRECRAWL_API_KEY')! } : {}),
+      ...(optEnv('RUNNER_EMAIL_ADDRESS') && optEnv('RUNNER_EMAIL_PASSWORD') && optEnv('RUNNER_IMAP_HOST') ? {
+        inboxConfig: {
+          host: optEnv('RUNNER_IMAP_HOST')!,
+          port: intEnv('RUNNER_IMAP_PORT', 993),
+          user: optEnv('RUNNER_EMAIL_ADDRESS')!,
+          pass: optEnv('RUNNER_EMAIL_PASSWORD')!,
+        },
+      } : {}),
+      ...(optEnv('RUNNER_EMAIL_ADDRESS') && optEnv('RUNNER_EMAIL_PASSWORD') && optEnv('RUNNER_SMTP_HOST') ? {
+        emailSender: {
+          host: optEnv('RUNNER_SMTP_HOST')!,
+          port: intEnv('RUNNER_SMTP_PORT', 465),
+          user: optEnv('RUNNER_EMAIL_ADDRESS')!,
+          pass: optEnv('RUNNER_EMAIL_PASSWORD')!,
+        },
+      } : {}),
+      ...(optEnv('GIT_PUSH_REPO') && optEnv('GIT_PUSH_TOKEN') ? {
+        gitWorkspace: {
+          repo: optEnv('GIT_PUSH_REPO')!,
+          token: optEnv('GIT_PUSH_TOKEN')!,
+        },
+      } : {}),
+    },
   });
 
   // Graceful shutdown.

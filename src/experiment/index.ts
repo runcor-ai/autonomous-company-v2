@@ -6,6 +6,7 @@ import { OpenRouterClient } from '../shared/openrouter.js';
 import { runAgent, type AgentRunnerConfig } from '../agent/index.js';
 import { runControl, type ControlRunnerConfig } from '../control/index.js';
 import { bootHarness, closeHarness, type AgentHarness, type DialecticLike } from '../agent/boot.js';
+import { createDispatcher, type DispatcherConfig } from '../agent/dispatcher.js';
 import { createDashboardServer, type DashboardServer } from '../dashboard/server.js';
 import type { DashboardContext } from '../dashboard/types.js';
 import { startRaterLoop, type RaterConfig } from '../rater/index.js';
@@ -50,6 +51,10 @@ export interface ExperimentConfig {
 
   /** Optional per-component DB paths. Default: in-memory (tests). Production: paths under the Railway volume. */
   harnessDbPaths?: { identity?: string; goals?: string; temporal?: string; meta?: string; coherence?: string };
+
+  /** Action dispatcher config — credentials for the agent's senses + outward actions.
+   *  When omitted, the agent reasons but its action choices have no effect (Phase-5 behavior). */
+  dispatcher?: Omit<DispatcherConfig, 'store' | 'publicUrlPrefix'>;
 }
 
 export interface ExperimentHandle {
@@ -109,6 +114,11 @@ export async function startExperiment(config: ExperimentConfig): Promise<Experim
   };
   const stopRater = startRaterLoop(raterCfg);
 
+  // Build the action dispatcher (real provider calls — without this, V2 reasons into a void).
+  const dispatcher = config.dispatcher !== undefined
+    ? createDispatcher({ ...config.dispatcher, store, publicUrlPrefix: config.publicUrlPrefix })
+    : undefined;
+
   // V2 runner.
   const v2Cfg: AgentRunnerConfig = {
     store, apiKey: config.openrouterApiKey, budgetCapUsd: v2Cap, maxCycles,
@@ -123,6 +133,7 @@ export async function startExperiment(config: ExperimentConfig): Promise<Experim
       kind: 'v2', type: ev.type, payload: ev.payload, ts: new Date().toISOString(),
     }),
     client: v2Client,
+    ...(dispatcher !== undefined ? { dispatcher } : {}),
   };
   const v2Done: Promise<void> = (async () => {
     try {
