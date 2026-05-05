@@ -70,8 +70,12 @@ export async function runControl(config: ControlRunnerConfig): Promise<ControlRu
       }
     } catch (err) {
       if (err instanceof BudgetExceededError) { reason = 'budgetExhausted'; break; }
-      reason = 'error';
-      throw err;
+      // Any other error — log and CONTINUE. One bad cycle shouldn't kill the runner.
+      const msg = (err as Error).message ?? String(err);
+      console.warn(`[runcor control] cycle ${n} failed: ${msg.slice(0, 200)} — continuing`);
+      config.onEvent?.({ type: 'cycle', payload: {
+        cycleNumber: n, status: 'failed', error: msg.slice(0, 500),
+      }});
     }
     if (n < config.maxCycles - 1) await sleep(config.intervalSeconds * 1000);
   }

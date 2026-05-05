@@ -85,8 +85,14 @@ export async function runAgent(config: AgentRunnerConfig): Promise<AgentRunResul
         if (result.parsedAction?.action === 'terminate') { reason = 'terminated'; break; }
       } catch (err) {
         if (err instanceof BudgetExceededError) { reason = 'budgetExhausted'; break; }
-        reason = 'error';
-        throw err;
+        // Any other error (dialectic blip, model timeout, network glitch) — log
+        // and CONTINUE the loop. One bad cycle shouldn't kill the experiment.
+        // runAgentCycle already marked the cycle row 'failed' before re-throwing.
+        const msg = (err as Error).message ?? String(err);
+        console.warn(`[runcor] cycle ${n} failed: ${msg.slice(0, 200)} — continuing to next cycle`);
+        config.onEvent?.({ type: 'cycle', payload: {
+          cycleNumber: n, status: 'failed', error: msg.slice(0, 500),
+        }});
       }
 
       // Day-end detection: after the cycle completes, check whether we crossed
