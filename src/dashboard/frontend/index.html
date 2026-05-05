@@ -62,9 +62,14 @@
     </section>
 
     <section class="transcript-section">
-      <h2>Live transcript</h2>
-      <p class="muted">Every Player/Coach/Judge round, every action, every operator note. SSE stream.</p>
-      <pre id="transcript" class="transcript">connecting…</pre>
+      <h2>Transcript</h2>
+      <p class="muted">Every Player/Coach/Judge round, every action. History on load + live SSE updates. Player output rendered as markdown.</p>
+      <div class="transcript-controls">
+        <label><input type="checkbox" id="filter-v2" checked> V2</label>
+        <label><input type="checkbox" id="filter-control" checked> control</label>
+        <span id="transcript-status" class="muted"></span>
+      </div>
+      <div id="transcript" class="transcript">loading…</div>
     </section>
   </main>
 
@@ -72,6 +77,10 @@
     <p>&copy; 2026 runcor — MIT. <a href="https://runcor.ai">runcor.ai</a> · <a href="https://github.com/runcor-ai/autonomous-company-v2">repo</a></p>
   </footer>
 
+  <!-- marked.js for rendering Player markdown output. CDN, ~30KB gzipped. -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <!-- DOMPurify to sanitize the rendered HTML before injection (Player output is untrusted). -->
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

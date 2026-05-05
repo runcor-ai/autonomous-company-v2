@@ -1,7 +1,6 @@
 // runcor v2 dashboard — vanilla JS frontend.
 
 const POLL_MS = 4000;
-const TRANSCRIPT_MAX_LINES = 200;
 
 // ── helpers ──
 const $ = (id) => document.getElementById(id);
@@ -56,26 +55,16 @@ function drawChart(perSummary) {
   const ctx = c.getContext('2d');
   const W = c.width, H = c.height;
   ctx.clearRect(0, 0, W, H);
-  // axes
-  ctx.strokeStyle = '#2a2a36';
-  ctx.lineWidth = 1;
-  // y-axis at left
+  ctx.strokeStyle = '#2a2a36'; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(40, 10); ctx.lineTo(40, H - 30); ctx.stroke();
-  // 0-line
   const zeroY = (H - 30 + 10) / 2;
   ctx.strokeStyle = '#3a3a4a';
   ctx.beginPath(); ctx.moveTo(40, zeroY); ctx.lineTo(W - 10, zeroY); ctx.stroke();
-  // labels
   ctx.fillStyle = '#8a8a96'; ctx.font = '11px monospace';
-  ctx.fillText('+1', 8, 15);
-  ctx.fillText(' 0', 14, zeroY + 4);
-  ctx.fillText('-1', 12, H - 28);
+  ctx.fillText('+1', 8, 15); ctx.fillText(' 0', 14, zeroY + 4); ctx.fillText('-1', 12, H - 28);
 
   const scored = (perSummary ?? []).filter((s) => s.score !== null);
-  if (scored.length === 0) {
-    ctx.fillText('no scored summaries yet', 60, zeroY - 10);
-    return;
-  }
+  if (scored.length === 0) { ctx.fillText('no scored summaries yet', 60, zeroY - 10); return; }
   const v2 = scored.filter((s) => s.kind === 'v2');
   const ctrl = scored.filter((s) => s.kind === 'control');
   const drawSeries = (series, color) => {
@@ -95,21 +84,15 @@ function drawChart(perSummary) {
       ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill();
     });
   };
-  drawSeries(v2, '#22d3ee');     // V2 = cyan (matches /coherence/ subpage palette)
-  drawSeries(ctrl, '#a3e635');   // control = lime
-
-  // legend
+  drawSeries(v2, '#22d3ee');
+  drawSeries(ctrl, '#a3e635');
   ctx.fillStyle = '#22d3ee'; ctx.fillRect(W - 110, 14, 10, 10); ctx.fillStyle = '#ededef'; ctx.fillText('V2', W - 95, 23);
   ctx.fillStyle = '#a3e635'; ctx.fillRect(W - 60, 14, 10, 10); ctx.fillStyle = '#ededef'; ctx.fillText('control', W - 45, 23);
 }
 
 async function refreshScores() {
-  // Operator-only — frontend obtains the bearer at boot from sessionStorage if present.
   const token = sessionStorage.getItem('opToken');
-  if (!token) {
-    $('current-score').textContent = '(scores require operator auth — no token)';
-    return;
-  }
+  if (!token) { $('current-score').textContent = '(scores require operator auth — no token)'; return; }
   const data = await fetchJson('/scores', { headers: { Authorization: 'Bearer ' + token } });
   if (data?.error) { $('current-score').textContent = data.error; return; }
   drawChart(data.perSummary);
@@ -122,32 +105,97 @@ async function refreshScores() {
   }
 }
 
-// ── live transcript via SSE ──
-function startTranscript() {
-  const el = $('transcript');
-  el.textContent = '';
-  const append = (line) => {
-    el.textContent += line + '\n';
-    const lines = el.textContent.split('\n');
-    if (lines.length > TRANSCRIPT_MAX_LINES) {
-      el.textContent = lines.slice(-TRANSCRIPT_MAX_LINES).join('\n');
-    }
-    el.scrollTop = el.scrollHeight;
-  };
+// ── transcript: history-on-load + live updates + markdown rendering ──
+
+const md = (text) => {
+  if (!text || typeof text !== 'string') return '';
+  try {
+    const html = window.marked.parse(text, { breaks: true, gfm: true });
+    return window.DOMPurify.sanitize(html);
+  } catch {
+    return escapeHtml(text);
+  }
+};
+const escapeHtml = (s) => s.replace(/[&<>"']/g, (c) =>
+  ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+
+function renderCycleEntry(kind, c) {
+  const decisions = c.decisions ?? [];
+  const actions = c.actions ?? [];
+  const totalCost = decisions.reduce((s, d) => s + (d.costUsd || 0), 0);
+  const totalTokens = decisions.reduce((s, d) => s + (d.promptTokens || 0) + (d.completionTokens || 0), 0);
+  const ts = c.completedAt ?? c.startedAt ?? '';
+
+  let body = '';
+  for (const d of decisions) {
+    body += `
+      <div class="t-decision">
+        <div class="t-d-meta">${escapeHtml(d.role)}/${escapeHtml(d.model)} · ${d.promptTokens}p+${d.completionTokens}c tok · $${(d.costUsd || 0).toFixed(6)}</div>
+        <div class="t-d-output">${md(d.output)}</div>
+      </div>`;
+  }
+  for (const a of actions) {
+    const payload = a.payload !== undefined && a.payload !== null
+      ? `<code class="t-payload">${escapeHtml(JSON.stringify(a.payload))}</code>`
+      : '';
+    body += `<div class="t-action"><span class="t-tag t-tag-action">action</span> <strong>${escapeHtml(String(a.action))}</strong> ${payload}</div>`;
+  }
+  return `
+    <article class="t-entry t-${kind}">
+      <header class="t-head">
+        <span class="t-tag t-tag-${kind}">${kind}</span>
+        <span class="t-cycle">cycle ${c.cycleNumber}</span>
+        <span class="t-status t-status-${c.status}">${c.status}</span>
+        <span class="t-cost">$${totalCost.toFixed(6)} · ${totalTokens} tok</span>
+        <span class="t-time">${ts.slice(11, 19)}</span>
+      </header>
+      ${body}
+    </article>`;
+}
+
+let currentCyclesCache = { v2: [], control: [] };
+let renderScheduled = false;
+
+function renderTranscript() {
+  const showV2 = $('filter-v2').checked;
+  const showControl = $('filter-control').checked;
+  const merged = [];
+  if (showV2) for (const c of currentCyclesCache.v2) merged.push(['v2', c]);
+  if (showControl) for (const c of currentCyclesCache.control) merged.push(['control', c]);
+  // Most recent first.
+  merged.sort((a, b) => {
+    const ta = a[1].startedAt || '';
+    const tb = b[1].startedAt || '';
+    return tb.localeCompare(ta);
+  });
+  const html = merged.map(([k, c]) => renderCycleEntry(k, c)).join('');
+  $('transcript').innerHTML = html || '<div class="muted">no cycles yet</div>';
+  $('transcript-status').textContent = `${currentCyclesCache.v2.length} V2 + ${currentCyclesCache.control.length} control cycles`;
+}
+
+async function reloadTranscript() {
+  const [v2, ctrl] = await Promise.all([
+    fetchJson('/v2/transcript'),
+    fetchJson('/control/transcript'),
+  ]);
+  if (Array.isArray(v2)) currentCyclesCache.v2 = v2;
+  if (Array.isArray(ctrl)) currentCyclesCache.control = ctrl;
+  renderTranscript();
+}
+
+function scheduleTranscriptReload() {
+  if (renderScheduled) return;
+  renderScheduled = true;
+  setTimeout(() => { renderScheduled = false; void reloadTranscript(); }, 1500);
+}
+
+function startSse() {
   let es;
   const connect = () => {
     es = new EventSource('/transcript/live');
-    es.onopen = () => append('— connected —');
-    es.onerror = () => { append('— disconnected, retrying in 3s —'); es.close(); setTimeout(connect, 3000); };
+    es.onerror = () => { es.close(); setTimeout(connect, 3000); };
     ['cycle', 'decision', 'action', 'summary', 'score', 'operator'].forEach((t) => {
-      es.addEventListener(t, (ev) => {
-        try {
-          const d = JSON.parse(ev.data);
-          append(`[${d.ts}] ${d.kind}/${d.type} ${typeof d.payload === 'string' ? d.payload : JSON.stringify(d.payload)}`);
-        } catch {
-          append(`[?] ${ev.data}`);
-        }
-      });
+      es.addEventListener(t, () => scheduleTranscriptReload());
     });
   };
   connect();
@@ -155,14 +203,17 @@ function startTranscript() {
 
 // ── boot ──
 (async function () {
-  // sessionStorage opToken bootstrap: ?opToken=... in URL grants the operator view.
   const params = new URLSearchParams(location.search);
   const token = params.get('opToken');
   if (token) { sessionStorage.setItem('opToken', token); history.replaceState({}, '', location.pathname); }
 
+  $('filter-v2').addEventListener('change', renderTranscript);
+  $('filter-control').addEventListener('change', renderTranscript);
+
   await refreshOnce();
   await refreshScores();
-  startTranscript();
+  await reloadTranscript();
+  startSse();
   setInterval(refreshOnce, POLL_MS);
   setInterval(refreshScores, POLL_MS * 3);
 })();
