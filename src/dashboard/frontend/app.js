@@ -146,19 +146,19 @@ async function refreshHypotheses() {
   $('hypotheses').innerHTML = cards;
 }
 
-// ── cycle summaries (V2-002: derived from /summaries which serves daily summary MemoryNodes) ──
+// ── cycle summaries (V2-002: derived from /cycle-summary which synthesizes recent
+//    cycles from bus events — actions taken + reasoning per cycle, no LLM call) ──
 async function refreshSummaries() {
   try {
     const [v2, ctrl] = await Promise.all([
-      fetchJson('/summaries?role=v2&limit=5'),
-      fetchJson('/summaries?role=control&limit=5'),
+      fetchJson('/cycle-summary?role=v2&limit=5'),
+      fetchJson('/cycle-summary?role=control&limit=5'),
     ]);
     renderSummary('v2', v2);
     renderSummary('control', ctrl);
   } catch (_e) {
-    // Summaries may not exist yet on a fresh deploy; render empty.
-    renderSummary('v2', { summaries: [] });
-    renderSummary('control', { summaries: [] });
+    renderSummary('v2', { summary: '', lastCycle: 0, generatedAt: '', actionMix: [] });
+    renderSummary('control', { summary: '', lastCycle: 0, generatedAt: '', actionMix: [] });
   }
 }
 function renderSummary(kind, data) {

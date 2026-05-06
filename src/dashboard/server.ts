@@ -279,6 +279,77 @@ export function startDashboard(args: DashboardArgs): DashboardHandle {
     });
   };
 
+  const handleCycleSummary: RequestHandler = (req, res) => {
+    const url = new URL(req.url ?? '', 'http://x');
+    const role = paramOf(url, 'role') ?? 'v2';
+    const limit = Math.min(20, Math.max(1, parseInt(paramOf(url, 'limit') ?? '5', 10)));
+    // Pull recent bus events, filter by role, group by cycle.
+    const allEvents = args.bus.snapshotAfter(0);
+    const roleEvents = allEvents.filter((e) => {
+      const d = e.data as Record<string, unknown> | undefined;
+      const r = typeof d?.agentRole === 'string' ? d.agentRole : 'v2';
+      return r === role;
+    });
+    // Group by cycle number.
+    const byCycle = new Map<number, typeof roleEvents>();
+    for (const ev of roleEvents) {
+      const d = ev.data as Record<string, unknown>;
+      const cycle = typeof d.cycle === 'number' ? d.cycle : -1;
+      if (!byCycle.has(cycle)) byCycle.set(cycle, []);
+      byCycle.get(cycle)!.push(ev);
+    }
+    // Take last N cycles, newest first.
+    const sortedCycles = Array.from(byCycle.entries()).sort((a, b) => b[0] - a[0]).slice(0, limit);
+    // Extract actions from execution_complete events.
+    const actionMap = new Map<string, number>();
+    const cycleSummaries: string[] = [];
+    let lastCycle = -1;
+    for (const [cycleNum, evs] of sortedCycles) {
+      if (cycleNum > lastCycle) lastCycle = cycleNum;
+      const exec = evs.find((e) => e.event === 'execution_complete');
+      if (exec) {
+        const text = (exec.data as Record<string, unknown>)?.result as Record<string, unknown> | undefined;
+        const respText = typeof text?.text === 'string' ? text.text : '';
+        // Try to parse as JSON action.
+        let action = '?';
+        let reasoning = '';
+        try {
+          const stripped = respText.replace(/^```(?:json)?\s*\n?|\n?```\s*$/g, '').trim();
+          const parsed = JSON.parse(stripped) as { action?: string; reasoning?: string };
+          action = parsed.action ?? '?';
+          reasoning = parsed.reasoning ?? '';
+        } catch (_) {
+          reasoning = respText.slice(0, 200);
+        }
+        actionMap.set(action, (actionMap.get(action) ?? 0) + 1);
+        cycleSummaries.push(`- **cycle ${cycleNum}** \`${action}\` — ${reasoning}`);
+      }
+    }
+    const actionMix = Array.from(actionMap.entries())
+      .map(([action, count]) => ({ action, count }))
+      .sort((a, b) => b.count - a.count);
+    // Optional augmenting from harness state.
+    let goals: string | undefined;
+    let identity: string | undefined;
+    let drives: { summary: string; max: number } | undefined;
+    if (role === 'v2' && args.getCurrentCycle) {
+      // V2 has goals + identity + drives accessible if wired.
+      // For now keep these fields minimal; data sources require additional dashboard args.
+    }
+    jsonResponse(res, 200, {
+      summary: cycleSummaries.length > 0
+        ? `### Recent ${cycleSummaries.length} cycles\n\n${cycleSummaries.join('\n')}`
+        : '_No cycles recorded yet._',
+      lastCycle,
+      generatedAt: new Date().toISOString(),
+      fromCache: false,
+      actionMix,
+      ...(goals ? { goals } : {}),
+      ...(identity ? { identity } : {}),
+      ...(drives ? { drives } : {}),
+    });
+  };
+
   const handleMemoryNode: RequestHandler = (req, res) => {
     const url = new URL(req.url ?? '', 'http://x');
     const segments = url.pathname.split('/');
@@ -451,6 +522,7 @@ export function startDashboard(args: DashboardArgs): DashboardHandle {
       if (pathname === '/data' && method === 'GET') return handleData(req, res);
       if (pathname === '/blog' && method === 'GET') return handleBlog(req, res);
       if (pathname === '/summaries' && method === 'GET') return handleBlog(req, res);
+      if (pathname === '/cycle-summary' && method === 'GET') return handleCycleSummary(req, res);
       if (pathname === '/scores' && method === 'GET') {
         return blockAgentEgress(requireBearerToken(operatorToken, handleScores))(req, res);
       }
