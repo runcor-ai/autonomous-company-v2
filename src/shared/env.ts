@@ -14,6 +14,9 @@ export interface V2Env {
   maxCycles: number;
   v2BudgetUsd: number;
   controlBudgetUsd: number;
+  /** Cap on V2's adaptive-cadence per-cycle sleep (seconds). Computed `next_wake` is
+   *  clamped to this so V2 still fires periodically even at low drive pressure. */
+  v2IntervalSeconds: number;
   controlIntervalSeconds: number;
   /** Dashboard. */
   dashboardHost: string;
@@ -86,6 +89,7 @@ export function loadV2Env(): V2Env {
     // (matches 001's operating budget). Both V2 and control track independently.
     v2BudgetUsd: intEnv('V2_BUDGET_USD', 5),
     controlBudgetUsd: intEnv('CONTROL_BUDGET_USD', 5),
+    v2IntervalSeconds: intEnv('V2_INTERVAL_SECONDS', 60),
     controlIntervalSeconds: intEnv('CONTROL_INTERVAL_SECONDS', 300),
     dashboardHost: optEnv('DASHBOARD_HOST') ?? '0.0.0.0',
     dashboardPort: intEnv('DASHBOARD_PORT', 8080),

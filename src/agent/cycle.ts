@@ -78,6 +78,10 @@ export interface RunCyclesArgs {
    *  agent runner to keep `harness.cycleAccessor` in sync so dashboard panels (drives,
    *  overview, harness monitor) see the live cycle number. */
   onCycleAdvance?: (cycle: number) => void;
+  /** Optional ceiling on the adaptive-cadence sleep (seconds). Caps `computeNextWake.ms`
+   *  so V2 still fires at least every N seconds even under low drive pressure. Defaults
+   *  to 60s. Ignored when `fixedSleepMs` is set (control's path). */
+  maxSleepSeconds?: number;
 }
 
 const DEFAULT_SLEEP = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -299,6 +303,7 @@ export async function runCycles(args: RunCyclesArgs): Promise<{ cyclesRun: numbe
       if (spentUsd >= args.budgetUsd) break;
 
       let waitMs = args.fixedSleepMs ?? 0;
+      let waitReason = args.fixedSleepMs ? 'fixed' : '';
       if (!args.fixedSleepMs && args.temporal) {
         const wake = args.temporal.computeNextWake({
           drives: {
@@ -313,8 +318,17 @@ export async function runCycles(args: RunCyclesArgs): Promise<{ cyclesRun: numbe
           currentCycle: cycle,
         });
         waitMs = wake.ms;
-        args.bus.emit('next_wake_scheduled', { cycle, ms: wake.ms, reason: wake.reason });
+        waitReason = wake.reason;
       }
+      // Cap the per-cycle sleep so V2 still fires periodically even when adaptive cadence
+      // chooses very long sleeps under low drive pressure (avoids "napping for 30 min on a
+      // fresh boot" behavior). Cap is V2_INTERVAL_SECONDS env var, intent: max sleep cap.
+      const maxSleepMs = (args.maxSleepSeconds ?? 60) * 1000;
+      if (waitMs > maxSleepMs) {
+        waitReason = `${waitReason} (capped from ${Math.round(waitMs / 1000)}s)`;
+        waitMs = maxSleepMs;
+      }
+      args.bus.emit('next_wake_scheduled', { cycle, ms: waitMs, reason: waitReason });
       if (waitMs > 0) await sleep(waitMs);
     }
 

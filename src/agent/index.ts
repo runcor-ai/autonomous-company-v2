@@ -108,6 +108,7 @@ export async function runAgent(): Promise<AgentRunResult> {
       budgetUsd: harness.env.v2BudgetUsd,
       isTerminated: harness.terminationState.isTerminated,
       onCycleAdvance: (c: number) => harness.cycleAccessor.set(c),
+      maxSleepSeconds: harness.env.v2IntervalSeconds, // cap V2's adaptive sleep at the env baseline
     });
 
     // FR-110, FR-120, FR-121: generate + publish result.md regardless of outcome.
