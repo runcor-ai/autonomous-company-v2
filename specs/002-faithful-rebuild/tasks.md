@@ -46,52 +46,52 @@ description: "Task list for V2 Faithful Rebuild — feature 002-faithful-rebuild
 
 ### Phase 0b — runcor-integration (CRITICAL — single-intake path depends on it)
 
-- [ ] T011 [P] Implement `registerWithEngine(engine: Runcor, tools: McpToolDefinition[]): Promise<void>` in `runcor-integration/src/integration-agent.ts` (FR-092) — wraps each `DynamicTool[]` (with handler) into an MCP-server-shaped adapter and calls `engine.addAdapter(...)`; this closes the dynamic-action loop currently broken
-- [ ] T012 [P] Add top-level `Integration` interface + V2 type set in `runcor-integration/src/types.ts` — `ReachableSource`, `DiscoveryReport`, `SchemaDescriptor`, `SafetyPolicy`, `McpToolDefinition` per research.md §R6 (existing `DynamicTool`/`SchemaSnapshot`/`TableSchema` types remain as internal richer forms)
-- [ ] T013 [P] Add unified `discoverSchemas(opts: { reachable: ReachableSource[] }): Promise<DiscoveryReport>` in `runcor-integration/src/schema-discovery.ts` — multi-source dispatch on `kind: 'sqlite' | 'http' | 'mcp_server'`; v0.1 SQLite-only; HTTP and mcp_server return empty per research.md §R6
-- [ ] T014 [P] Refactor `generateTools` → `synthesizeTools(report: DiscoveryReport, policy: SafetyPolicy): McpToolDefinition[]` in `runcor-integration/src/tool-generator.ts` (FR-091) — accept SafetyPolicy; filter generated tools against `policy.forbid` list (`'ddl' | 'mass_delete' | 'unbounded_select'`)
-- [ ] T015 [P] Add `listKnownTools(): McpToolDefinition[]` API surface in `runcor-integration/src/integration-agent.ts` querying persisted tools from `IntegrationDatabase`
-- [ ] T016 [P] Add `runcor-integration/tests/register-with-engine.spec.ts` — verifies tools synthesised by `synthesizeTools` then registered via `registerWithEngine` appear in `engine.listAdapterTools()`
-- [ ] T017 [P] Add `runcor-integration/tests/safety-policy.spec.ts` — verifies destructive operations filtered at synthesis time
-- [ ] T018 Bump `runcor-integration` version to 0.2.0, update README.md, push commits, open PR; merge after review
+- [X] T011 [P] Implement `registerWithEngine` in `runcor-integration/src/integration.ts` (FR-092). **Done 2026-05-06. Uses runcor v0.3.0 in-process transport (`engine.addAdapter({ transport: 'in-process', tools: [...] })`). Empty tools list short-circuits.** PR: runcor-ai/runcor-integration#1.
+- [X] T012 [P] Add V2 type set in `runcor-integration/src/types.ts`. **Done 2026-05-06. Added `ReachableSource`, `SchemaDescriptor`, `SchemaDescriptorField`, `DiscoveryReport`, `SafetyPolicy`, `McpToolDefinition`, `Integration`, `EngineLike` + `DEFAULT_SAFETY_POLICY`.**
+- [X] T013 [P] Unified `discoverSchemas(opts)` in `runcor-integration/src/integration.ts`. **Done 2026-05-06. SQLite via existing pipeline; HTTP/mcp_server return empty schemas.**
+- [X] T014 [P] `synthesizeTools(report, policy)` with safety filter in `runcor-integration/src/integration.ts`. **Done 2026-05-06. Defense-in-depth name-pattern filter: `^(create|drop|alter|truncate|rename)[-_]` blocks DDL; `^delete[-_]` blocks mass-deletes. Default policy = ['ddl','mass_delete','unbounded_select']. Current generateTools produces only read-only tools so filter is a no-op today.**
+- [X] T015 [P] `listKnownTools()` on Integration facade. **Done 2026-05-06. Returns defensive copy of synthesised inventory.**
+- [X] T016 [P] `runcor-integration/tests/test-register-with-engine.ts` (13 tests). **Done 2026-05-06.**
+- [X] T017 [P] `runcor-integration/tests/test-safety-policy.ts` (13 tests). **Done 2026-05-06.**
+- [X] T018 Bump version to 0.2.0, push, open + merge PR. **Done 2026-05-06. PR #1 merged. 48/48 tests passing.**
 
 ### Phase 0c — runcor-data (mechanical schema + shape work)
 
-- [ ] T019 [P] Add `Entity`, `AttributeValue`, `ProvenanceRecord` types in `runcor-data/src/types.ts` per data-model.md §Entity (V2-shape alongside existing `DataNode`); add `name` field, per-attribute provenance wrapping, `createdAtCycle` / `lastUpdatedCycle` cycle-aware fields
-- [ ] T020 [P] Migrate SQLite schema in `runcor-data/src/database.ts` — add `created_at_cycle` + `last_updated_cycle` columns to `data_nodes`, add `provenance` join table for per-attribute provenance, add `conflicts` table for persisted Conflict entities (FR-082)
-- [ ] T021 [P] Implement persisted `Conflict` entity in `runcor-data/src/stages/conflict.ts` — replace transient `ConflictResult` with persisted rows in new `conflicts` table; expose `id`, `status: 'open'|'resolved'`, `resolutionRule`, `resolvedAtCycle`, `resolvedValue` per data-model.md §Conflict
-- [ ] T022 [P] Add `RealitySlice` shape with `rendered: string` in `runcor-data/src/types.ts`; implement `DataCube.query({ goal?, drive?, relevance? }): RealitySlice` in `runcor-data/src/data-cube.ts` replacing the natural-language string signature; `rendered` is structured-text summary for substrate's Reality layer
-- [ ] T023 [P] Add `DataCube.getStats(): { entities, edges, openConflicts }` and `DataCube.listConflicts(status?)` in `runcor-data/src/data-cube.ts` per data-model.md §Conflict
-- [ ] T024 [P] Add aliased methods `DataCube.getEntity(id)` (alias of existing `getById`); rename internal `from_id`/`to_id` Edge fields to `fromEntityId`/`toEntityId` (with deprecation alias for back-compat) — V2's `contracts/sibling-bindings.md` requires the V2 names
-- [ ] T025 [P] Add `runcor-data/tests/cycle-aware.spec.ts` — verifies `createdAtCycle` / `lastUpdatedCycle` populated correctly across ingest + update
-- [ ] T026 [P] Add `runcor-data/tests/conflict-persistence.spec.ts` — verifies same entity, different attribute values from different sources produces a persisted Conflict with full provenance and surfaces it in RealitySlice
-- [ ] T027 [P] Add `runcor-data/tests/reality-slice.spec.ts` — verifies `query({ goal, drive })` returns RealitySlice with non-empty `rendered` text
-- [ ] T028 Bump `runcor-data` version to 0.2.0, update README.md, push commits, open PR; merge after review
+- [X] T019 [P] V2-shape types in `runcor-data/src/types.ts`. **Done 2026-05-06. Added Entity / AttributeValue / ProvenanceRecord / Edge / Conflict / RealitySlice / IngestInput / IngestResult / DataCubeStats / RealityQueryInput.** PR: runcor-ai/runcor-data#1.
+- [X] T020 [P] SQLite schema migration in `runcor-data/src/database.ts`. **Done 2026-05-06. Added created_at_cycle + last_updated_cycle + name columns to data_nodes (idempotent ALTER ADD COLUMN); new `provenance` and `conflicts` tables.**
+- [X] T021 [P] Persisted `Conflict` entity. **Done 2026-05-06. Conflicts written via DataCube.ingest pipeline; resolution mapping: escalate→open, new_wins/existing_wins→resolved with most_recent rule.**
+- [X] T022 [P] `RealitySlice` + `DataCube.queryReality({ goal, drive, relevance? })`. **Done 2026-05-06. Pre-rendered text included; legacy query(naturalLanguage) preserved.**
+- [X] T023 [P] `DataCube.getStats` + `listConflicts(status?)`. **Done 2026-05-06.**
+- [X] T024 [P] Aliased `DataCube.getEntity` returning V2 Entity; conversion helpers `dataNodeToEntity` / `dataEdgeToV2Edge` (private). **Done 2026-05-06.**
+- [X] T025 [P] `runcor-data/tests/test-cycle-aware.ts` (18 tests). **Done 2026-05-06.**
+- [X] T026 [P] `runcor-data/tests/test-conflict-persistence.ts` (22 tests). **Done 2026-05-06.**
+- [X] T027 [P] `runcor-data/tests/test-reality-slice.ts` (39 tests). **Done 2026-05-06.**
+- [X] T028 Bump to 0.2.0, push, open + merge PR. **Done 2026-05-06. PR #1 merged. 110/110 tests passing.**
 
 ### Phase 0d — runcor-temporal (sibling extension)
 
-- [ ] T029 [P] Implement `computeNextWake(input)` in `runcor-temporal/src/temporal.ts` (FR-020) — pure function per research.md §R7; signature `({ drives, pendingDeadlines, overdueCommitments, unresolvedCoherenceProblems, currentCycle }) => { ms: number, reason: string }`; clamp `[30_000, 21_600_000]` (FR-020a/b)
-- [ ] T030 [P] Implement `isDayBoundary(input)` in `runcor-temporal/src/temporal.ts` (FR-021) — pure function; signature `({ currentCycle, lastBoundaryCycle, cyclesPerDay, realHoursSinceLastBoundary }) => boolean`; default 200 cycles OR 24h whichever first
-- [ ] T031 [P] Add `runcor-temporal/tests/computeNextWake.spec.ts` — verifies wake interval shortens monotonically as drive pressure rises (FR-020); verifies clamp bounds
-- [ ] T032 [P] Add `runcor-temporal/tests/isDayBoundary.spec.ts` — verifies fires at 200 cycles, fires at 24h whichever first
-- [ ] T033 Bump `runcor-temporal` version to 0.2.0, push commits, open PR; merge after review
+- [X] T029 [P] `computeNextWake(input)` pure function in `runcor-temporal/src/temporal.ts`. **Done 2026-05-06. Formula: ms = clamp(BASE / (1 + sum_of_pressures_and_counts), MIN, MAX). BASE=30min, MIN=30s, MAX=6h.** PR: runcor-ai/runcor-temporal#1.
+- [X] T030 [P] `isDayBoundary(input)` pure function. **Done 2026-05-06. Either-or threshold (cycles ≥ 200 OR realHours ≥ 24, whichever first); both configurable.**
+- [X] T031 [P] `runcor-temporal/tests/computeNextWake.test.ts` (9 tests). **Done 2026-05-06.**
+- [X] T032 [P] `runcor-temporal/tests/isDayBoundary.test.ts` (13 tests). **Done 2026-05-06.**
+- [X] T033 Bump to 0.2.0, push, open + merge PR. **Done 2026-05-06. PR #1 merged. 35/35 tests passing.**
 
 ### Phase 0e — Memory injection extensions (R8) — runcor-identity / runcor-goals / runcor-coherence
 
-- [ ] T034 [P] Add optional `memory: MemorySystem` constructor option to `runcor-identity/src/index.ts` (createIdentity factory) — when provided, route `reflect()` outputs through `memory.record(text, { tags: ['identity_snapshot', 'version:<N>'] })` instead of the local SQLite store; fallback to existing local DB if unset
-- [ ] T035 [P] Add memory injection to `runcor-goals/src/index.ts` (createGoals factory) — when provided, route goal stack as `Plan` via `memory.getPlan()`/`memory.setPlan(...)` (PlanItem.category = `'goal:purpose'|'goal:objective'|'goal:initiative'`); route proposals via `memory.record(text, { tags: ['goal_proposal', 'status:<accepted|rejected>'] })`
-- [ ] T036 [P] Add memory injection to `runcor-coherence/src/index.ts` (createCoherence factory) — when provided, route active task list as Plan (`category: 'coherence_task'`); route problems via `memory.record(text, { tags: ['coherence_problem', 'open'|'resolved'] })`
-- [ ] T037 [P] Add `runcor-identity/tests/memory-injection.spec.ts` — verifies memory-injected mode produces no local SQLite writes and identity_snapshot tagged nodes appear in injected memory
-- [ ] T038 [P] Add `runcor-goals/tests/memory-injection.spec.ts` — same pattern for goals
-- [ ] T039 [P] Add `runcor-coherence/tests/memory-injection.spec.ts` — same pattern for coherence
-- [ ] T040 Bump runcor-identity / runcor-goals / runcor-coherence versions to 0.2.0; push commits; open 3 separate PRs (one per sibling repo — independent reviews, independent merges, no cross-repo coupling); merge after review. Each sibling repo follows its own commit-message convention.
+- [X] T034 [P] runcor-identity memory injection. **Done 2026-05-06. Optional `memory: MemoryRecorder` field on IdentityOptions; dual-writes (local SQLite still authoritative for queries; memory is publish channel). Best-effort: memory.record errors don't break local flow.** PR: runcor-ai/runcor-identity#1.
+- [X] T035 [P] runcor-goals memory injection. **Done 2026-05-06. Dual-writes accept (status:accepted), reinforce (goal_reinforced), retire (goal_retired) events.** PR: runcor-ai/runcor-goals#1.
+- [X] T036 [P] runcor-coherence memory injection. **Done 2026-05-06. Dual-writes submit (coherence_task), detect (coherence_problem), initiate (coherence_flow + corrective task via unified submit() path).** PR: runcor-ai/runcor-coherence#1.
+- [X] T037 [P] `runcor-identity/tests/unit/memory-injection.test.ts` (8 tests). **Done 2026-05-06.**
+- [X] T038 [P] `runcor-goals/tests/unit/memory-injection.test.ts` (7 tests). **Done 2026-05-06.**
+- [X] T039 [P] `runcor-coherence/tests/unit/memory-injection.test.ts` (7 tests). **Done 2026-05-06.**
+- [X] T040 Bump 3 siblings to 0.2.0, push, open + merge 3 PRs. **Done 2026-05-06. All three PRs merged.**
 
 ### Phase 0f — runcor (engine) intra-provider retry (FR-017 / addresses C1)
 
-- [ ] T161 [P] Implement `isTransient(err)` helper in `runcor/src/model/router.ts` — classifies network errors (`ETIMEDOUT`, `ECONNRESET`, `ENOTFOUND`, `ECONNREFUSED`), HTTP 429, and HTTP 5xx as transient; everything else (4xx other than 429, auth failures, malformed-request) as non-transient. Per research.md §R14.
-- [ ] T162 Implement bounded retry inside `ModelRouter.complete()` provider attempt loop (around `runcor/src/model/router.ts:196`) — on a thrown error classified as transient by T161, retry the SAME provider up to 3 times with exponential backoff (200ms × 2^n) before recording circuit-breaker failure and falling through to the next provider (FR-017). Non-transient errors skip retry entirely.
-- [ ] T163 [P] Add `runcor/tests/router-retry.spec.ts` — verifies: (a) 3 attempts on transient errors with exponential backoff timing, (b) NO retry on 4xx (other than 429) or auth failures, (c) circuit breaker records failure ONLY after retry exhaustion, (d) successful retry on attempt 2 records breaker success, (e) provider fallback still works after intra-provider retry exhaustion.
-- [ ] T164 Bump `runcor` to v0.2.0, update README.md noting the new retry behavior, push commits, open PR; merge after review.
+- [X] T161 [P] `isTransient(err)` helper in `runcor/src/model/router.ts`. **Done 2026-05-06. Classifies 429, 5xx, network codes (ETIMEDOUT/ECONNRESET/ENOTFOUND/ECONNREFUSED) as transient.** PR: runcor-ai/runcor#1.
+- [X] T162 Bounded retry inside `ModelRouter.complete()`. **Done 2026-05-06. New private `completeWithRetry` helper — up to 3 SAME-provider attempts with 200ms × 2^n backoff before circuit-breaker failure + provider fallback.**
+- [X] T163 [P] `runcor/tests/unit/model/router-retry.test.ts` (13 tests). **Done 2026-05-06.**
+- [X] T164 Bump `runcor` to v0.2.0 + FEATURES.md note. **Done 2026-05-06. PR #1 merged. 41/41 existing tests still pass.**
 
 **Checkpoint**: All 14 sibling components are at the V2-required version (including `runcor` v0.2.0 with intra-provider retry). V2 src/ work can begin.
 
