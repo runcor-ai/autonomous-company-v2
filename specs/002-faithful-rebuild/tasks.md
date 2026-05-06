@@ -411,14 +411,14 @@ description: "Task list for V2 Faithful Rebuild — feature 002-faithful-rebuild
 - [X] T152 [P] Run `npm run typecheck` — zero errors
 - [X] T153 [P] Run `npm run preflight` — env vars + sibling-resolution sanity
 - [X] T154 [P] Walkthrough doc written: `docs/v2-002-quickstart-walkthrough.md` — operator-facing runbook, command-by-command, with expected output + failure-mode diagnostics. **Done 2026-05-06.** (Operator-side fresh-clone walkthrough remains a manual punch-list item — there's no substitute for actually running it.)
-- [ ] T155 [P] Validate `/scores` blocking from agent egress against a real Railway deploy (with the agent process's egress IP set)
+- [ ] T155 [P] Validate `/scores` blocking from agent egress against a real Railway deploy (with the agent process's egress IP set). **Partial 2026-05-06**: deploy is live at `runner-v2.runcor.ai`, agent-egress middleware wired in `src/dashboard/agent-egress.ts`. Outstanding: operator must determine Railway service's outbound egress IP (hobby tier rotates dynamically; static IP requires plan upgrade) and set `AGENT_EGRESS_IPS` env var, then test from Railway shell that `/scores` returns 403 with valid bearer.
 - [X] T176 [P] Implement continuous harness-engagement monitor in `src/agent/cycle.ts` — interval from `HARNESS_MONITOR_INTERVAL_CYCLES` env var (default 100); each fire re-runs `substrate.installer.isInstalled(engine)` + 14-component liveness ping; emits `harness_engaged` / `harness_disengaged` telemetry events; halts cycle loop on disengagement pending operator review (FR-019g; SC-005; addresses C5). Cross-cutting concern, not story-scoped.
 - [X] T177 [P] `tests/integration/continuous-harness-monitor.spec.ts` — simulate substrate uninstalling at cycle 150; expect cycle 200's monitor to detect, emit `harness_disengaged`, halt loop. Tests FR-019g + SC-005.
 - [X] T156 [P] Verify the constitutional alignment table in `spec.md` still maps every Principle → at least one FR; add any new FR introduced during implementation
 - [X] T157 Run `/speckit.analyze` to detect any spec/plan/tasks drift introduced during implementation. **Done 2026-05-06 — 0 CRITICAL/HIGH/MEDIUM, 2 LOW (both resolved same session: T159 tag-state drift fixed, FR-052 mutation 503 wired into operator handlers).**
 - [X] T158 README.md updated with V2-002 status + Railway-stopped note + 137-test count. **Done 2026-05-06.**
 - [X] T159 Tag a `v2-002-rc1` git tag for the implementation milestone (do NOT push to main yet — main triggers Railway auto-deploy per CLAUDE.md §11). **Done 2026-05-06 — local tag at commit 48b9bdd. Not pushed.**
-- [ ] T160 Operator review + go/no-go for Railway redeploy
+- [X] T160 Operator review + go/no-go for Railway redeploy. **Done 2026-05-06: GO. Deployed to runner-v2.runcor.ai at commit c9158dd. All 14 boot-guard components PASS, substrate installed, 10 MCP local tools registered, dashboard responding. Required 4 deploy-hardening commits past the rc1 baseline (Dockerfile sibling clones, sibling copy-not-symlink, healthcheck path, boot-guard subpath-exports fix).**
 
 ---
 
