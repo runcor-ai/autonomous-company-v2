@@ -8,6 +8,9 @@ import { boot } from '../boot/boot.js';
 import { runCycles } from './cycle.js';
 import { startDashboard } from '../dashboard/server.js';
 import type { BootedHarness } from '../boot/boot.js';
+import { generateResultMd } from './result-md.js';
+import { publishResult } from './result-publisher.js';
+import { createHarnessMonitor } from './harness-monitor.js';
 
 const V2_USER_PROMPT = `Choose your next action based on the current state. Reply with a JSON object: {"action": "<tool_name|none>", "args": {...}, "reasoning": "<one short sentence>"}.`;
 
@@ -31,6 +34,17 @@ export async function runAgent(): Promise<AgentRunResult> {
     operatorDbPath: `${harness.env.agentStateDir}/operator.db`,
   });
 
+  // T176: continuous harness-engagement monitor (FR-019g, SC-005).
+  const harnessMonitor = createHarnessMonitor({
+    installer: harness.substrate.installer,
+    engine: harness.engine as unknown as { modelRouter?: { complete: unknown } },
+    bus: harness.bus,
+    intervalCycles: harness.env.harnessMonitorIntervalCycles,
+    cycle: () => harness.cycleAccessor.get(),
+    requestHalt: (reason) => harness.terminationState.requestTerminate(`harness disengaged: ${reason}`),
+  });
+  const stopHarnessMonitor = harnessMonitor.start();
+
   try {
     const cycleResult = await runCycles({
       agentRole: 'v2',
@@ -52,6 +66,27 @@ export async function runAgent(): Promise<AgentRunResult> {
       isTerminated: harness.terminationState.isTerminated,
     });
 
+    // FR-110, FR-120, FR-121: generate + publish result.md regardless of outcome.
+    const resultMd = generateResultMd({
+      agentRole: 'v2',
+      startupRecord: harness.startupRecord,
+      memory: harness.memory,
+      bus: harness.bus,
+      cyclesRun: cycleResult.cyclesRun,
+      totalSpentUsd: cycleResult.spentUsd,
+      reason: cycleResult.reason,
+      terminationReason: harness.terminationState.reason(),
+    });
+    const publishOutcome = await publishResult({
+      agentRole: 'v2',
+      agentStateDir: harness.env.agentStateDir,
+      resultMd,
+      ...(harness.env.gitPushRepo ? { gitPushRepo: harness.env.gitPushRepo } : {}),
+      ...(harness.env.gitPushToken ? { gitPushToken: harness.env.gitPushToken } : {}),
+    });
+    harness.bus.emit('result_published', publishOutcome as unknown as Record<string, unknown>);
+    console.log(`[v2] result.md published: ${publishOutcome.localPath} (pushed=${publishOutcome.pushed})`);
+
     return {
       cyclesRun: cycleResult.cyclesRun,
       reason: cycleResult.reason,
@@ -59,6 +94,7 @@ export async function runAgent(): Promise<AgentRunResult> {
       terminationReason: harness.terminationState.reason(),
     };
   } finally {
+    stopHarnessMonitor();
     await dashboard.close();
     harness.temporal.close();
     harness.identity?.close();

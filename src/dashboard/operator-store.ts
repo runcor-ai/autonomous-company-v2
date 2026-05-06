@@ -66,7 +66,7 @@ export class OperatorStore {
     const before = opts.before ?? Date.now();
     const rows = this.db
       .prepare(
-        'SELECT id, ts, kind, payload_json, authenticated_as FROM operator_actions WHERE ts <= ? ORDER BY ts DESC LIMIT ?',
+        'SELECT id, ts, kind, payload_json, authenticated_as, rowid FROM operator_actions WHERE ts <= ? ORDER BY ts DESC, rowid DESC LIMIT ?',
       )
       .all(before, limit) as Array<{
         id: string;

@@ -390,7 +390,19 @@ export function startDashboard(args: DashboardArgs): DashboardHandle {
       if (pathname === '/coherence' && method === 'GET') {
         return notImplemented(res, '/coherence');
       }
-      if (pathname === '/result' && method === 'GET') return notImplemented(res, '/result');
+      if (pathname === '/result' && method === 'GET') {
+        const role = paramOf(url, 'role') ?? 'v2';
+        const resultFile = path.join(args.env.agentStateDir, `result-${role}.md`);
+        try {
+          const content = await readFile(resultFile);
+          res.statusCode = 200;
+          res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+          res.end(content);
+        } catch {
+          notFound(res);
+        }
+        return;
+      }
       if (pathname === '/hypothesis' && method === 'GET') return notImplemented(res, '/hypothesis');
       if (pathname === '/rater' && method === 'GET') return notImplemented(res, '/rater');
 
