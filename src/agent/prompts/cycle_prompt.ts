@@ -48,6 +48,9 @@ export interface CyclePromptInput {
   recentTranscript?: string;
   recentActionResults?: Array<{ cycleNumber: number; action: string; success: boolean; result: unknown; error?: string }>;
   loopWarning?: string;
+  /** Findings from the previous cycle's watchdog audit. Surfaced so the agent
+   *  can act on capability gaps + stated-but-not-acted patterns. */
+  watchdogFindings?: Array<{ category: string; capability: string; problem: string; dialecticReason?: string }>;
 }
 
 const PER_RESULT_BUDGET = 4000; // chars per action result in the prompt
@@ -82,6 +85,14 @@ export function assembleCyclePrompt(input: CyclePromptInput): string {
         ? `error=${r.error}`
         : truncateWithChunkHint(JSON.stringify(r.result), PER_RESULT_BUDGET, r.cycleNumber);
       lines.push(`  cycle ${r.cycleNumber} [${r.action}] ${status}: ${resultStr}`);
+    }
+  }
+  if (input.watchdogFindings && input.watchdogFindings.length > 0) {
+    lines.push('');
+    lines.push('WATCHDOG SIGNALS (from previous cycle — capability gaps + stated-but-not-acted patterns):');
+    for (const f of input.watchdogFindings.slice(0, 5)) {
+      const reason = f.dialecticReason ? ` — ${f.dialecticReason}` : '';
+      lines.push(`  [${f.category}] capability=${f.capability} problem="${f.problem.slice(0, 200)}"${reason}`);
     }
   }
   if (input.loopWarning) {

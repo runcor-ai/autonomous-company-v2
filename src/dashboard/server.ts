@@ -94,7 +94,11 @@ async function handleRequest(
     }],
     [/^\/(?:v2|control)\/transcript$/, (m) => {
       const kind = m[0].split('/')[1] as 'v2' | 'control';
-      const c = pickKindCtx(kind); return c ? recentTranscript(c, kind, 50) : { error: 'kind not running' };
+      const c = pickKindCtx(kind); if (!c) return { error: 'kind not running' };
+      const limitParam = parseInt(url.searchParams.get('limit') ?? '50', 10) || 50;
+      const beforeRaw = url.searchParams.get('before');
+      const beforeParam = beforeRaw && /^\d+$/.test(beforeRaw) ? parseInt(beforeRaw, 10) : undefined;
+      return recentTranscript(c, kind, Math.min(limitParam, 200), beforeParam);
     }],
     [/^\/(?:v2|control)\/memory$/, (m) => {
       const c = pickKindCtx(m[0].split('/')[1] as 'v2' | 'control');

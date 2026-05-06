@@ -46,6 +46,8 @@ export interface ActionDispatcher {
   execute(action: string, payload: unknown): Promise<DispatchResult>;
   /** True for senses, false for outward-effect actions. Useful for prompt grouping. */
   isSense(action: string): boolean;
+  /** Self-scheduler — runner consults this to honor schedule_self requests. */
+  scheduler: SelfScheduler;
 }
 
 const SENSE_NAMES = new Set(['http_fetch', 'web_search', 'web_scrape', 'fs_read', 'inbox_read', 'time', 'fetch_chunk']);
@@ -78,6 +80,7 @@ export function createDispatcher(config: DispatcherConfig): ActionDispatcher {
 
   return {
     isSense: (action) => SENSE_NAMES.has(action),
+    scheduler,
 
     async execute(action: string, payload: unknown): Promise<DispatchResult> {
       const p = (payload && typeof payload === 'object') ? payload as Record<string, unknown> : {};

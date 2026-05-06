@@ -1,5 +1,6 @@
 // V2 agent runner — Phase 3: real harness wiring.
-// Phase 2's fixed-cadence stub remains; Phase 5 integrates runcor-temporal adaptive next-wake.
+// Cadence is adaptive: drive pressure scales the inter-cycle sleep; an
+// outstanding schedule_self request, when its wake fires, overrides the next sleep.
 
 import { Store } from '../shared/db.js';
 import { OpenRouterClient, BudgetExceededError } from '../shared/openrouter.js';
@@ -65,6 +66,11 @@ export async function runAgent(config: AgentRunnerConfig): Promise<AgentRunResul
   let cyclesRun = 0;
   let reason: AgentRunResult['reason'] = 'maxCycles';
 
+  // Watchdog findings from the last cycle, fed into the next cycle's prompt.
+  // In-memory only — persistent storage is the cycle's `watchdog audit`.
+  let previousWatchdogFindings: Array<{ category: string; capability: string; problem: string; dialecticReason?: string }> = [];
+  let lastMaxDriveIntensity = 0;
+
   const publicUrlPrefix = config.publicUrlPrefix ?? 'http://localhost';
   try {
     for (let n = startCycle; n < config.maxCycles; n++) {
@@ -80,8 +86,11 @@ export async function runAgent(config: AgentRunnerConfig): Promise<AgentRunResul
           burnPerCycleUsd,
           ...(config.onEvent !== undefined ? { onEvent: config.onEvent } : {}),
           ...(config.dispatcher !== undefined ? { dispatcher: config.dispatcher } : {}),
+          ...(previousWatchdogFindings.length > 0 ? { previousWatchdogFindings } : {}),
         });
         cyclesRun++;
+        previousWatchdogFindings = result.watchdogFindingsList;
+        lastMaxDriveIntensity = result.maxDriveIntensity;
         if (result.parsedAction?.action === 'terminate') { reason = 'terminated'; break; }
       } catch (err) {
         if (err instanceof BudgetExceededError) { reason = 'budgetExhausted'; break; }
@@ -107,7 +116,14 @@ export async function runAgent(config: AgentRunnerConfig): Promise<AgentRunResul
         } catch { /* swallow — next day's reflection will retry */ }
       }
 
-      if (n < config.maxCycles - 1) await sleep(config.intervalSeconds * 1000);
+      if (n < config.maxCycles - 1) {
+        const sleepMs = computeNextSleepMs({
+          baseSeconds: config.intervalSeconds,
+          maxDriveIntensity: lastMaxDriveIntensity,
+          dispatcher: config.dispatcher,
+        });
+        await sleep(sleepMs);
+      }
     }
   } finally {
     closeHarness(harness);
@@ -116,4 +132,39 @@ export async function runAgent(config: AgentRunnerConfig): Promise<AgentRunResul
   const totalSpentUsd = store.totalSpentUsd('v2');
   if (ownStore) store.close();
   return { cyclesRun, reason, totalSpentUsd };
+}
+
+/** Compute the next inter-cycle sleep in ms.
+ *  Precedence:
+ *    1. If the agent has a pending schedule_self request and its wakeAt is in the
+ *       future, sleep until that wake (clamped to [base, base*60]).
+ *    2. Otherwise scale base by drive pressure:
+ *         max ≥ 0.7  → base × 0.5  (urgent — wake faster)
+ *         max <  0.3 → base × 2.0  (calm — burn less)
+ *         else       → base
+ *  Always clamped to a 5s minimum so we don't spin. */
+export function computeNextSleepMs(args: {
+  baseSeconds: number;
+  maxDriveIntensity: number;
+  dispatcher?: ActionDispatcher;
+  nowFn?: () => number;
+}): number {
+  const baseMs = args.baseSeconds * 1000;
+  const now = args.nowFn ? args.nowFn() : Date.now();
+
+  // Scheduler override.
+  const scheduled = args.dispatcher?.scheduler.consumeNext();
+  if (scheduled) {
+    const wakeMs = new Date(scheduled.wakeAt).getTime();
+    if (Number.isFinite(wakeMs) && wakeMs > now) {
+      const delta = wakeMs - now;
+      return Math.max(5_000, Math.min(delta, baseMs * 60));
+    }
+    // Wake in the past — fall through to adaptive cadence (don't spin).
+  }
+
+  let scaled = baseMs;
+  if (args.maxDriveIntensity >= 0.7) scaled = Math.round(baseMs * 0.5);
+  else if (args.maxDriveIntensity < 0.3) scaled = baseMs * 2;
+  return Math.max(5_000, scaled);
 }

@@ -3,8 +3,16 @@
 import type { ServerResponse } from 'node:http';
 import type { KindContext, TranscriptEvent } from '../types.js';
 
-export function recentTranscript(ctx: KindContext, kind: 'v2' | 'control', limit = 50): unknown {
-  const cycles = ctx.store.cyclesFor(kind);
+export function recentTranscript(
+  ctx: KindContext,
+  kind: 'v2' | 'control',
+  limit = 50,
+  beforeCycleNumber?: number,
+): unknown {
+  let cycles = ctx.store.cyclesFor(kind);
+  if (beforeCycleNumber !== undefined) {
+    cycles = cycles.filter((c) => c.cycleNumber < beforeCycleNumber);
+  }
   const recent = cycles.slice(-limit);
   const out: Array<{
     cycleId: number; cycleNumber: number; status: string; startedAt: string; completedAt?: string;

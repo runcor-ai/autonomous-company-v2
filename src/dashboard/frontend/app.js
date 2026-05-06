@@ -250,6 +250,8 @@ function renderCycleEntry(kind, c) {
 
 let currentCyclesCache = { v2: [], control: [] };
 let renderScheduled = false;
+const TRANSCRIPT_LIMIT = 30;
+let loadingOlder = { v2: false, control: false };
 
 function renderTranscript() {
   // Two columns side-by-side, V2 left + control right. Each column shows its
@@ -257,25 +259,59 @@ function renderTranscript() {
   const sortDesc = (a, b) => (b.startedAt || '').localeCompare(a.startedAt || '');
   const v2Sorted = [...currentCyclesCache.v2].sort(sortDesc);
   const ctrlSorted = [...currentCyclesCache.control].sort(sortDesc);
+  const olderBtn = (kind, list) => list.length === 0 ? '' :
+    `<button class="t-older" data-kind="${kind}">Load older cycles</button>`;
   $('transcript-v2').innerHTML = v2Sorted.length === 0
     ? '<div class="muted">no V2 cycles yet</div>'
-    : v2Sorted.map((c) => renderCycleEntry('v2', c)).join('');
+    : v2Sorted.map((c) => renderCycleEntry('v2', c)).join('') + olderBtn('v2', v2Sorted);
   $('transcript-control').innerHTML = ctrlSorted.length === 0
     ? '<div class="muted">no control cycles yet</div>'
-    : ctrlSorted.map((c) => renderCycleEntry('control', c)).join('');
+    : ctrlSorted.map((c) => renderCycleEntry('control', c)).join('') + olderBtn('control', ctrlSorted);
   $('v2-transcript-count').textContent = `${v2Sorted.length} cycles`;
   $('control-transcript-count').textContent = `${ctrlSorted.length} cycles`;
   $('transcript-status').textContent = `(${v2Sorted.length} V2 + ${ctrlSorted.length} control)`;
+
+  document.querySelectorAll('.t-older').forEach((btn) => {
+    btn.addEventListener('click', () => loadOlder(btn.dataset.kind));
+  });
 }
 
 async function reloadTranscript() {
+  // Recent slice — returns the newest TRANSCRIPT_LIMIT cycles. Lazy-load older
+  // appends via loadOlder(kind).
   const [v2, ctrl] = await Promise.all([
-    fetchJson('/v2/transcript'),
-    fetchJson('/control/transcript'),
+    fetchJson(`/v2/transcript?limit=${TRANSCRIPT_LIMIT}`),
+    fetchJson(`/control/transcript?limit=${TRANSCRIPT_LIMIT}`),
   ]);
-  if (Array.isArray(v2)) currentCyclesCache.v2 = v2;
-  if (Array.isArray(ctrl)) currentCyclesCache.control = ctrl;
+  if (Array.isArray(v2)) currentCyclesCache.v2 = mergeCycles(currentCyclesCache.v2, v2);
+  if (Array.isArray(ctrl)) currentCyclesCache.control = mergeCycles(currentCyclesCache.control, ctrl);
   renderTranscript();
+}
+
+function mergeCycles(existing, incoming) {
+  // Dedup by cycleNumber + status (status can change running→complete).
+  const map = new Map();
+  for (const c of existing) map.set(c.cycleNumber, c);
+  for (const c of incoming) map.set(c.cycleNumber, c);
+  return Array.from(map.values());
+}
+
+async function loadOlder(kind) {
+  if (loadingOlder[kind]) return;
+  loadingOlder[kind] = true;
+  const cache = currentCyclesCache[kind];
+  const oldestCycleNumber = cache.length > 0
+    ? Math.min(...cache.map((c) => c.cycleNumber))
+    : undefined;
+  const url = oldestCycleNumber !== undefined
+    ? `/${kind}/transcript?limit=${TRANSCRIPT_LIMIT}&before=${oldestCycleNumber}`
+    : `/${kind}/transcript?limit=${TRANSCRIPT_LIMIT}`;
+  const data = await fetchJson(url);
+  if (Array.isArray(data) && data.length > 0) {
+    currentCyclesCache[kind] = mergeCycles(currentCyclesCache[kind], data);
+    renderTranscript();
+  }
+  loadingOlder[kind] = false;
 }
 
 function scheduleTranscriptReload() {

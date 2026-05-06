@@ -35,6 +35,8 @@ export interface AgentCycleInput {
   onEvent?: (event: { type: 'cycle' | 'decision' | 'action'; payload: unknown }) => void;
   /** Action dispatcher — when omitted, actions are recorded but not executed. */
   dispatcher?: ActionDispatcher;
+  /** Findings from the previous cycle's watchdog audit, surfaced into this prompt. */
+  previousWatchdogFindings?: Array<{ category: string; capability: string; problem: string; dialecticReason?: string }>;
 }
 
 export interface AgentCycleResult {
@@ -43,7 +45,11 @@ export interface AgentCycleResult {
   answer: string;
   parsedAction?: { action: string; payload: unknown; thought?: string };
   watchdogFindings: number;
+  /** Watchdog findings from THIS cycle, persisted so the runner can feed them to the next cycle. */
+  watchdogFindingsList: Array<{ category: string; capability: string; problem: string; dialecticReason?: string }>;
   coherenceTaskId: number;
+  /** Max drive pressure intensity 0..1 — runner uses this for adaptive cadence. */
+  maxDriveIntensity: number;
 }
 
 /** Extract the first balanced `{...}` JSON object from text. Returns null if none. */
@@ -159,6 +165,9 @@ export async function runAgentCycle(input: AgentCycleInput): Promise<AgentCycleR
       capabilities: { senses: SENSES, actions: ACTIONS },
       recentActionResults,
       ...(loopWarning !== undefined ? { loopWarning } : {}),
+      ...(input.previousWatchdogFindings && input.previousWatchdogFindings.length > 0
+        ? { watchdogFindings: input.previousWatchdogFindings }
+        : {}),
     });
 
     // 4. Dialectic reasons.
@@ -326,7 +335,49 @@ export async function runAgentCycle(input: AgentCycleInput): Promise<AgentCycleR
     // Always: tick the goals decay each cycle so unmaintained goals retire.
     try { harness.goals.decayStep(cycleNumber); } catch { /* noop */ }
 
+    // 10. Periodic skill proposal (every 50 cycles) — synthesize an R++ skill
+    //     from the most-recent successful trajectory so a new capability can
+    //     emerge from observed patterns. Persisted to skill_proposals table.
+    if (cycleNumber > 0 && cycleNumber % 50 === 0) {
+      try {
+        const successful = allActions.filter((a) => a.error === undefined && a.action !== 'none').slice(-10);
+        if (successful.length >= 3) {
+          const proposal = await harness.skills.proposeSkill({
+            pattern: {
+              name: `cycle-${cycleNumber}-pattern`,
+              description: `Pattern extracted from ${successful.length} recent successful actions at cycle ${cycleNumber}`,
+              context: `Autonomous primordial agent. Recent actions span: ${[...new Set(successful.map((a) => a.action))].join(', ')}`,
+              trajectories: successful.map((a) => ({
+                action: a.action,
+                input: a.payload,
+                output: a.result,
+                score: 0.8,
+                metadata: { cycleId: a.cycleId },
+              })),
+            },
+            externalNames: [...SENSES, ...ACTIONS],
+          });
+          store.recordSkillProposal({
+            cycleNumber,
+            name: proposal.name,
+            description: proposal.description,
+            rppSource: proposal.rppSource,
+            confidence: proposal.confidence,
+            parsedCleanly: proposal.parsedCleanly,
+            attempts: proposal.attempts,
+            trajectoryCount: proposal.trajectoryCount,
+          });
+        }
+      } catch (e) { console.warn(`[runcor] skills.proposeSkill cycle ${cycleNumber} failed: ${(e as Error).message.slice(0, 200)}`); }
+    }
+
     // Done.
+    const findingsList = findings.map((f) => ({
+      category: String(f.category),
+      capability: f.capability,
+      problem: f.problem,
+      ...(f.dialecticReason !== undefined ? { dialecticReason: f.dialecticReason } : {}),
+    }));
     store.completeCycle(cycleRow.id, 'complete');
     input.onEvent?.({ type: 'cycle', payload: {
       cycleNumber, status: 'complete',
@@ -340,7 +391,9 @@ export async function runAgentCycle(input: AgentCycleInput): Promise<AgentCycleR
       answer,
       ...(parsed !== undefined ? { parsedAction: parsed } : {}),
       watchdogFindings: findings.length,
+      watchdogFindingsList: findingsList,
       coherenceTaskId: taskId,
+      maxDriveIntensity: drives.maxIntensity ?? 0,
     };
   } catch (err) {
     store.completeCycle(cycleRow.id, 'failed');

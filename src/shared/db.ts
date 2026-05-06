@@ -105,7 +105,59 @@ export class Store {
         FOREIGN KEY (hypothesis_id) REFERENCES hypotheses(id)
       );
       CREATE INDEX IF NOT EXISTS idx_hyp_eval_h ON hypothesis_evaluations(hypothesis_id);
+
+      CREATE TABLE IF NOT EXISTS skill_proposals (
+        id                INTEGER PRIMARY KEY AUTOINCREMENT,
+        cycle_number      INTEGER NOT NULL,
+        name              TEXT NOT NULL,
+        description       TEXT NOT NULL,
+        rpp_source        TEXT NOT NULL,
+        confidence        REAL NOT NULL,
+        parsed_cleanly    INTEGER,
+        attempts          INTEGER NOT NULL,
+        trajectory_count  INTEGER NOT NULL,
+        created_at        TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_skill_prop_cycle ON skill_proposals(cycle_number);
     `);
+  }
+
+  // ── Skill proposals ──
+
+  recordSkillProposal(input: {
+    cycleNumber: number; name: string; description: string;
+    rppSource: string; confidence: number;
+    parsedCleanly: boolean | undefined; attempts: number; trajectoryCount: number;
+  }): number {
+    const info = this.db.prepare(`
+      INSERT INTO skill_proposals
+        (cycle_number, name, description, rpp_source, confidence, parsed_cleanly,
+         attempts, trajectory_count, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      input.cycleNumber, input.name, input.description, input.rppSource, input.confidence,
+      input.parsedCleanly === undefined ? null : (input.parsedCleanly ? 1 : 0),
+      input.attempts, input.trajectoryCount, new Date().toISOString(),
+    );
+    return info.lastInsertRowid as number;
+  }
+
+  allSkillProposals(): Array<{
+    id: number; cycleNumber: number; name: string; description: string;
+    rppSource: string; confidence: number; parsedCleanly: boolean | null;
+    attempts: number; trajectoryCount: number; createdAt: string;
+  }> {
+    const rows = this.db.prepare(`SELECT * FROM skill_proposals ORDER BY id DESC`).all() as Array<{
+      id: number; cycle_number: number; name: string; description: string;
+      rpp_source: string; confidence: number; parsed_cleanly: number | null;
+      attempts: number; trajectory_count: number; created_at: string;
+    }>;
+    return rows.map((r) => ({
+      id: r.id, cycleNumber: r.cycle_number, name: r.name, description: r.description,
+      rppSource: r.rpp_source, confidence: r.confidence,
+      parsedCleanly: r.parsed_cleanly === null ? null : r.parsed_cleanly === 1,
+      attempts: r.attempts, trajectoryCount: r.trajectory_count, createdAt: r.created_at,
+    }));
   }
 
   // ── Hypotheses ──
