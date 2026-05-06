@@ -34,17 +34,17 @@ function renderOverview(elId, ov) {
 // ── poll panels ──
 async function refreshOnce() {
   const v2Tasks = [
-    fetchJson('/v2/overview').then((d) => renderOverview('v2-overview', d)),
-    fetchJson('/v2/drives').then((d) => $('v2-drives').textContent = fmt(d?.summary ?? d)),
-    fetchJson('/v2/identity').then((d) => $('v2-identity').textContent = fmt(d?.block ?? d)),
-    fetchJson('/v2/goals').then((d) => $('v2-goals').textContent = fmt(d?.block ?? d)),
-    fetchJson('/v2/coherence').then((d) => $('v2-coherence').textContent = fmt(d?.block ?? d)),
-    fetchJson('/v2/watchdog').then((d) => $('v2-watchdog').textContent = fmt(d)),
-    fetchJson('/v2/memory').then((d) => $('v2-memory').textContent = fmt(d)),
+    fetchJson('/healthz').then((d) => renderOverview('v2-overview', { ...d, kind: 'v2' })),
+    fetchJson('/drives?role=v2').then((d) => $('v2-drives').textContent = fmt(d?.summary ?? d)),
+    fetchJson('/identity?role=v2').then((d) => $('v2-identity').textContent = fmt(d?.block ?? d)),
+    fetchJson('/goals?role=v2').then((d) => $('v2-goals').textContent = fmt(d?.block ?? d)),
+    fetchJson('/coherence?role=v2').then((d) => $('v2-coherence').textContent = fmt(d?.block ?? d)),
+    fetchJson('/watchdog?role=v2').then((d) => $('v2-watchdog').textContent = fmt(d)),
+    fetchJson('/memory?role=v2').then((d) => $('v2-memory').textContent = fmt(d)),
   ];
   const controlTasks = [
-    fetchJson('/control/overview').then((d) => renderOverview('control-overview', d)),
-    fetchJson('/control/memory').then((d) => $('control-memory').textContent = fmt(d)),
+    fetchJson('/healthz').then((d) => renderOverview('control-overview', { ...d, kind: 'control' })),
+    fetchJson('/memory?role=control').then((d) => $('control-memory').textContent = fmt(d)),
   ];
   await Promise.all([...v2Tasks, ...controlTasks]);
 }
@@ -146,14 +146,20 @@ async function refreshHypotheses() {
   $('hypotheses').innerHTML = cards;
 }
 
-// ── cycle summaries (cheap-model paraphrase of last 5 cycles) ──
+// ── cycle summaries (V2-002: derived from /summaries which serves daily summary MemoryNodes) ──
 async function refreshSummaries() {
-  const [v2, ctrl] = await Promise.all([
-    fetchJson('/v2/cycle-summary'),
-    fetchJson('/control/cycle-summary'),
-  ]);
-  renderSummary('v2', v2);
-  renderSummary('control', ctrl);
+  try {
+    const [v2, ctrl] = await Promise.all([
+      fetchJson('/summaries?role=v2&limit=5'),
+      fetchJson('/summaries?role=control&limit=5'),
+    ]);
+    renderSummary('v2', v2);
+    renderSummary('control', ctrl);
+  } catch (_e) {
+    // Summaries may not exist yet on a fresh deploy; render empty.
+    renderSummary('v2', { summaries: [] });
+    renderSummary('control', { summaries: [] });
+  }
 }
 function renderSummary(kind, data) {
   const body = $(`${kind}-summary`);
