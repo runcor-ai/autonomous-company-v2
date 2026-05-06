@@ -14,11 +14,23 @@ export interface ControlRunResult {
   totalSpentUsd: number;
 }
 
-export async function runControl(): Promise<ControlRunResult> {
+export interface RunControlOptions {
+  /** Optional shared event bus — when V2 and control co-run in one process, V2 passes its bus
+   *  here so control's cycle/cost events surface on the same dashboard. Defaults to control's
+   *  own bus when omitted (standalone-process mode). */
+  sharedBus?: import('../dashboard/event-bus.js').EventBus;
+  /** Optional callback invoked once control's harness is booted, so the caller (e.g. V2's runAgent)
+   *  can wire control's memory/dataCube into the dashboard for /memory?role=control panels. */
+  onBooted?: (h: { memory: unknown; dataCube: unknown }) => void;
+}
+
+export async function runControl(opts: RunControlOptions = {}): Promise<ControlRunResult> {
   const harness = await boot({ agentRole: 'control', cognitiveDisabled: true });
   if (!harness.controlConfig) {
     throw new Error('control-config.json not found — control cannot start without the frozen Principle X config');
   }
+  if (opts.onBooted) opts.onBooted({ memory: harness.memory, dataCube: harness.dataCube });
+  const bus = opts.sharedBus ?? harness.bus;
 
   try {
     const result = await runCycles({
@@ -35,7 +47,7 @@ export async function runControl(): Promise<ControlRunResult> {
       skills: null,
       temporal: harness.temporal,
       dialectic: null,
-      bus: harness.bus,
+      bus,
       maxCycles: harness.env.maxCycles,
       budgetUsd: harness.controlConfig.config.budgetUsd,
       isTerminated: harness.terminationState.isTerminated,

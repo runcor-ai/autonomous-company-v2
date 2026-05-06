@@ -1,7 +1,7 @@
 {
   "model": "openrouter/nvidia/llama-3.1-nemotron-70b-instruct",
   "playerSystemPrompt": "You are an agent with the following capabilities. There is no goal. There is no commercial objective. Choose what to attend to and what action (if any) to take. Reply with a JSON object: {\"action\": \"<action_name|none>\", \"payload\": {...}, \"thought\": \"<one short sentence>\"}.",
-  "cadenceMs": 60000,
+  "cadenceMs": 30000,
   "budgetUsd": 5,
   "actionSurface": [
     "firecrawl_scrape",

@@ -11,6 +11,9 @@ import type { BootedHarness } from '../boot/boot.js';
 import { generateResultMd } from './result-md.js';
 import { publishResult } from './result-publisher.js';
 import { createHarnessMonitor } from './harness-monitor.js';
+import { runControl } from '../control/index.js';
+import type { MemorySystem } from 'runcor-memory';
+import type { DataCube } from 'runcor-data';
 
 const V2_USER_PROMPT = `Choose your next action based on the current state. Reply with a JSON object: {"action": "<tool_name|none>", "args": {...}, "reasoning": "<one short sentence>"}.`;
 
@@ -24,11 +27,19 @@ export interface AgentRunResult {
 export async function runAgent(): Promise<AgentRunResult> {
   const harness: BootedHarness = await boot({ agentRole: 'v2' });
 
+  // Mutable handles for control's memory + dataCube — populated when control boots.
+  // Dashboard reads these via getter closures so /memory?role=control + /data?role=control
+  // start returning real data the moment control's boot completes.
+  let controlMemory: MemorySystem | undefined;
+  let controlDataCube: DataCube | undefined;
+
   const dashboard = startDashboard({
     bus: harness.bus,
     env: harness.env,
     memory: harness.memory,
     dataCube: harness.dataCube,
+    get controlMemory() { return controlMemory; },
+    get controlDataCube() { return controlDataCube; },
     startupRecord: harness.startupRecord,
     terminationState: harness.terminationState,
     operatorDbPath: `${harness.env.agentStateDir}/operator.db`,
@@ -46,6 +57,20 @@ export async function runAgent(): Promise<AgentRunResult> {
       description: t.description ?? '',
       adapter: t.adapterName,
     })),
+  });
+
+  // Co-run control alongside V2 in the same process. Control gets V2's bus so its
+  // cycle/cost/discernment events surface on the same dashboard. Errors are logged
+  // but do NOT terminate V2 — control is observational. Fire-and-forget intentionally.
+  void runControl({
+    sharedBus: harness.bus,
+    onBooted: ({ memory, dataCube }) => {
+      controlMemory = memory as MemorySystem;
+      controlDataCube = dataCube as DataCube;
+      console.log('[v2] control co-process booted; dashboard will surface its state');
+    },
+  }).catch((err: unknown) => {
+    console.error('[v2] control co-process failed:', err instanceof Error ? err.message : err);
   });
 
   // T176: continuous harness-engagement monitor (FR-019g, SC-005).
