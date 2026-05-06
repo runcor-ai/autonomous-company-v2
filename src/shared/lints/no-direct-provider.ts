@@ -31,6 +31,11 @@ const PERMITTED_DIRS = [
   'src/engine', // engine factory legitimately wraps provider registration
   'tests', // tests may mock provider SDKs
   'src/shared/lints', // this file documents the patterns
+  // Observer-side LLM callers — NOT in the agent's call path. FR-010 / Principle V is about
+  // preventing the agent from bypassing the substrate gate; rater + hypothesis are scoring /
+  // matching pipelines that run alongside the agent and never feed the agent (Principle III).
+  'src/rater',
+  'src/hypothesis',
 ];
 
 const SRC_DIRS_TO_SCAN = ['src'];

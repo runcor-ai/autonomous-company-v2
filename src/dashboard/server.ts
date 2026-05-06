@@ -23,6 +23,7 @@ import type { StartupRecord } from '../boot/startup-record.js';
 import { OperatorStore, type OperatorActionKind } from './operator-store.js';
 import { requireBearerToken, extractBearerToken, type RequestHandler } from './auth.js';
 import { blockAgentEgress } from './agent-egress.js';
+import { RaterStore } from '../rater/store.js';
 
 export interface DashboardArgs {
   bus: EventBus;
@@ -35,6 +36,8 @@ export interface DashboardArgs {
   /** Optional control-process accessors (when V2 is co-located with the control process). */
   controlMemory?: MemorySystem;
   controlDataCube?: DataCube;
+  /** Optional rater store path. When provided, /scores serves real scores. */
+  raterDbPath?: string;
 }
 
 export interface DashboardHandle {
@@ -308,9 +311,33 @@ export function startDashboard(args: DashboardArgs): DashboardHandle {
     jsonResponse(res, 200, { actions: operatorStore.list({ limit }) });
   };
 
+  const raterStore = args.raterDbPath ? new RaterStore(args.raterDbPath) : null;
+
   const handleScores: RequestHandler = (_req, res) => {
-    // Stub for v0.1 — full /scores comes when the rater is ported (T140 / T144).
-    jsonResponse(res, 200, { v2: [], control: [] });
+    if (!raterStore) {
+      // No rater configured for this run — return empty arrays in the documented shape.
+      jsonResponse(res, 200, { v2: [], control: [] });
+      return;
+    }
+    const v2 = raterStore.list({ kind: 'v2', limit: 200 });
+    const control = raterStore.list({ kind: 'control', limit: 200 });
+    jsonResponse(res, 200, { v2, control });
+  };
+
+  const handleHypothesis: RequestHandler = async (_req, res) => {
+    // Read the latest evaluation set from memory (cached by an out-of-band runner).
+    const all = args.memory.getAll().filter((n) => (n.tags ?? []).includes('hypothesis_evaluation'));
+    const evaluations = all
+      .sort((a, b) => b.lastAccessed - a.lastAccessed)
+      .slice(0, 8) // 8 hypotheses
+      .map((n) => {
+        try {
+          return JSON.parse(n.content) as Record<string, unknown>;
+        } catch {
+          return { error: 'parse_failed', content: n.content.slice(0, 200) };
+        }
+      });
+    jsonResponse(res, 200, { evaluations });
   };
 
   const handleFrontend = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
@@ -403,8 +430,12 @@ export function startDashboard(args: DashboardArgs): DashboardHandle {
         }
         return;
       }
-      if (pathname === '/hypothesis' && method === 'GET') return notImplemented(res, '/hypothesis');
-      if (pathname === '/rater' && method === 'GET') return notImplemented(res, '/rater');
+      if (pathname === '/hypothesis' && method === 'GET') return handleHypothesis(req, res);
+      if (pathname === '/rater' && method === 'GET') {
+        // /rater is the rubric-info endpoint; /scores is the rated-output endpoint.
+        const { rubricHash, RUBRIC_VERSION } = await import('../rater/rubric.js');
+        return jsonResponse(res, 200, { version: RUBRIC_VERSION, hash: rubricHash() });
+      }
 
       if (method === 'GET') {
         return handleFrontend(req, res);
@@ -431,6 +462,7 @@ export function startDashboard(args: DashboardArgs): DashboardHandle {
       }
       sseClients.clear();
       operatorStore.close();
+      if (raterStore) raterStore.close();
       await new Promise<void>((resolve) => server.close(() => resolve()));
     },
   };
