@@ -48,6 +48,10 @@ export interface DashboardArgs {
   getResourceInputs?: () => ResourceInputs;
   /** Engine adapter-tool snapshot for /startup-record currentTools (T128). Defaults to []. */
   getCurrentTools?: () => Array<{ name: string; description: string; adapter?: string }>;
+  /** Optional cheap-model paraphraser for /cycle-summary. Called with structured cycle data
+   *  (action mix + recent reasoning bullets), returns 2-3 sentence narrative paraphrase.
+   *  Server caches result for 60s per role to avoid bursting LLM calls. Observer-side only. */
+  summarizeRecent?: (input: { role: string; bullets: string[]; actions: Array<{ action: string; count: number }> }) => Promise<string>;
 }
 
 export interface DashboardHandle {
@@ -279,10 +283,15 @@ export function startDashboard(args: DashboardArgs): DashboardHandle {
     });
   };
 
-  const handleCycleSummary: RequestHandler = (req, res) => {
+  // Cycle-summary cache: cheap-model paraphrase per role, 60s TTL (HTML promised this).
+  const summaryCache: Record<string, { summary: string; lastCycle: number; generatedAt: string; actionMix: Array<{ action: string; count: number }>; bullets: string[]; expiresAt: number }> = {};
+  const SUMMARY_TTL_MS = 60_000;
+
+  const handleCycleSummary: RequestHandler = async (req, res) => {
     const url = new URL(req.url ?? '', 'http://x');
     const role = paramOf(url, 'role') ?? 'v2';
     const limit = Math.min(20, Math.max(1, parseInt(paramOf(url, 'limit') ?? '5', 10)));
+
     // Pull recent bus events, filter by role, group by cycle.
     const allEvents = args.bus.snapshotAfter(0);
     const roleEvents = allEvents.filter((e) => {
@@ -290,7 +299,6 @@ export function startDashboard(args: DashboardArgs): DashboardHandle {
       const r = typeof d?.agentRole === 'string' ? d.agentRole : 'v2';
       return r === role;
     });
-    // Group by cycle number.
     const byCycle = new Map<number, typeof roleEvents>();
     for (const ev of roleEvents) {
       const d = ev.data as Record<string, unknown>;
@@ -298,11 +306,9 @@ export function startDashboard(args: DashboardArgs): DashboardHandle {
       if (!byCycle.has(cycle)) byCycle.set(cycle, []);
       byCycle.get(cycle)!.push(ev);
     }
-    // Take last N cycles, newest first.
     const sortedCycles = Array.from(byCycle.entries()).sort((a, b) => b[0] - a[0]).slice(0, limit);
-    // Extract actions from execution_complete events.
     const actionMap = new Map<string, number>();
-    const cycleSummaries: string[] = [];
+    const bullets: string[] = [];
     let lastCycle = -1;
     for (const [cycleNum, evs] of sortedCycles) {
       if (cycleNum > lastCycle) lastCycle = cycleNum;
@@ -310,7 +316,6 @@ export function startDashboard(args: DashboardArgs): DashboardHandle {
       if (exec) {
         const text = (exec.data as Record<string, unknown>)?.result as Record<string, unknown> | undefined;
         const respText = typeof text?.text === 'string' ? text.text : '';
-        // Try to parse as JSON action.
         let action = '?';
         let reasoning = '';
         try {
@@ -322,32 +327,41 @@ export function startDashboard(args: DashboardArgs): DashboardHandle {
           reasoning = respText.slice(0, 200);
         }
         actionMap.set(action, (actionMap.get(action) ?? 0) + 1);
-        cycleSummaries.push(`- **cycle ${cycleNum}** \`${action}\` — ${reasoning}`);
+        bullets.push(`cycle ${cycleNum} action=${action} — ${reasoning.slice(0, 200)}`);
       }
     }
     const actionMix = Array.from(actionMap.entries())
       .map(([action, count]) => ({ action, count }))
       .sort((a, b) => b.count - a.count);
-    // Optional augmenting from harness state.
-    let goals: string | undefined;
-    let identity: string | undefined;
-    let drives: { summary: string; max: number } | undefined;
-    if (role === 'v2' && args.getCurrentCycle) {
-      // V2 has goals + identity + drives accessible if wired.
-      // For now keep these fields minimal; data sources require additional dashboard args.
+
+    // If cache is fresh AND lastCycle hasn't advanced, serve cached.
+    const now = Date.now();
+    const cached = summaryCache[role];
+    if (cached && cached.expiresAt > now && cached.lastCycle === lastCycle) {
+      jsonResponse(res, 200, { ...cached, fromCache: true, actionMix });
+      return;
     }
-    jsonResponse(res, 200, {
-      summary: cycleSummaries.length > 0
-        ? `### Recent ${cycleSummaries.length} cycles\n\n${cycleSummaries.join('\n')}`
-        : '_No cycles recorded yet._',
-      lastCycle,
-      generatedAt: new Date().toISOString(),
-      fromCache: false,
-      actionMix,
-      ...(goals ? { goals } : {}),
-      ...(identity ? { identity } : {}),
-      ...(drives ? { drives } : {}),
-    });
+
+    // Build paraphrase via cheap-model summarizer if wired; otherwise fall back to bullets.
+    let summary: string;
+    if (args.summarizeRecent && bullets.length > 0) {
+      try {
+        summary = await args.summarizeRecent({ role, bullets, actions: actionMix });
+      } catch (err) {
+        console.warn('[dashboard] summarizeRecent failed, falling back to bullets:', err);
+        summary = bullets.length > 0
+          ? `### Recent ${bullets.length} cycles\n\n${bullets.map((b) => `- ${b}`).join('\n')}`
+          : '_No cycles recorded yet._';
+      }
+    } else {
+      summary = bullets.length > 0
+        ? `### Recent ${bullets.length} cycles\n\n${bullets.map((b) => `- ${b}`).join('\n')}`
+        : '_No cycles recorded yet._';
+    }
+
+    const generatedAt = new Date().toISOString();
+    summaryCache[role] = { summary, lastCycle, generatedAt, actionMix, bullets, expiresAt: now + SUMMARY_TTL_MS };
+    jsonResponse(res, 200, { summary, lastCycle, generatedAt, fromCache: false, actionMix });
   };
 
   const handleMemoryNode: RequestHandler = (req, res) => {

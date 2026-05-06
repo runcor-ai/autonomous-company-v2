@@ -14,6 +14,7 @@ import { createHarnessMonitor } from './harness-monitor.js';
 import { runControl } from '../control/index.js';
 import type { MemorySystem } from 'runcor-memory';
 import type { DataCube } from 'runcor-data';
+import { callOpenRouterChat } from '../rater/openrouter.js';
 
 const V2_USER_PROMPT = `Choose your next action based on the current state. Reply with a JSON object: {"action": "<tool_name|none>", "args": {...}, "reasoning": "<one short sentence>"}.`;
 
@@ -60,6 +61,23 @@ export async function runAgent(): Promise<AgentRunResult> {
       description: t.description ?? '',
       adapter: t.adapterName,
     })),
+    summarizeRecent: async ({ role, bullets, actions }) => {
+      // Cheap-model paraphrase for the dashboard summary panel. Observer-side LLM call;
+      // bypasses the substrate gate (no agent-prompt context). Uses llama-3.1-8b-instruct
+      // via OpenRouter (~$0.05/1M tokens — pennies even at the 60s cache cadence).
+      const actionLine = actions.length > 0
+        ? actions.map((a) => `${a.action} × ${a.count}`).join(', ')
+        : '(no actions yet)';
+      const user = `Agent role: ${role}\nAction mix: ${actionLine}\n\nRecent cycle activity:\n${bullets.join('\n')}\n\nIn 2-3 sentences, describe what this agent has been doing. Be specific about actions taken and the apparent intent. Plain prose, no bullets, no markdown headers.`;
+      const result = await callOpenRouterChat({
+        apiKey: harness.env.openrouterApiKey,
+        model: 'meta-llama/llama-3.1-8b-instruct',
+        system: 'You summarize an autonomous agent\'s recent behavior for a public dashboard. Output: 2-3 sentence prose. No headers, no bullets, no preamble.',
+        user,
+        maxTokens: 200,
+      });
+      return result.text.trim();
+    },
   });
 
   // Co-run control alongside V2 in the same process. Control gets V2's bus so its
