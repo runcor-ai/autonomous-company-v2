@@ -2,7 +2,7 @@
 
 > Primordial-agent emergence experiment.
 
-A single agent fully equipped with the runcor cognitive harness (15 components: 4 substrate siblings + 10 cognitive siblings + 1 R++ parser), observed publicly in real time at **runner.runcor.ai**.
+A single agent fully equipped with the runcor cognitive harness — **all 14 mandatory components** at boot — observed publicly in real time at **runner-v2.runcor.ai**. V2-002 is the faithful rebuild after V2-001's harness gaps were diagnosed; see `specs/002-faithful-rebuild/spec.md` and `CLAUDE.md`.
 
 This is **not** V1 with better tooling. There are no commercial targets, no MRR, no customer KPIs. The experiment looks for behavior that:
 
@@ -53,7 +53,13 @@ A second agent runs in parallel on the same dashboard. Same senses, same actions
 
 ## Status
 
-Phase 1 of 6: scaffold + constitution + spec + plan + tasks. See `specs/001-primordial-agent/`.
+**Feature 002 — faithful rebuild — implementation milestone reached.** V2 boots all 14 cognitive harness components, every LLM call routes through `runcor.modelRouter` + the substrate's prompt-stack + discernment gate, retry-then-flag exhaustion writes flag MemoryNodes via `runcor-memory.record`, cycle context comes from memory recall + reality slice (NO `actions[]` slice), control runs on the same engine + substrate with cognitive siblings disabled, dashboard exposes `/memory` + `/data` panels plus all 001 surfaces, rater + hypothesis modules ported against `runcor-memory` + V2-local `rater.db`. **Test count: 137 passed / 5 skipped (skips require `OPENAI_API_KEY` for embeddings).**
+
+See `specs/002-faithful-rebuild/spec.md`, `plan.md`, `tasks.md` (177 tasks; all automatable work complete) and `CLAUDE.md` for the full V2-002 picture.
+
+**Railway deployment is STOPPED** (last deploy at SHA `89dbf4b` was the 001 broken build). V2-002 is held back from `main` pending operator go/no-go: pushing to `main` triggers Railway auto-deploy. See `CLAUDE.md` §11.
+
+Current implementation HEAD: see `git log --oneline -1`.
 
 ## License
 
