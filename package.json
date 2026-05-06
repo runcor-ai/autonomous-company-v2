@@ -1,6 +1,6 @@
 {
   "name": "autonomous-company-v2",
-  "version": "0.1.0-alpha.0",
+  "version": "0.2.0-alpha.0",
   "description": "Primordial-agent emergence experiment. A single agent fully equipped with the runcor cognitive harness, observed publicly in real time at runner.runcor.ai. Success is qualitative: behavior unpredictable from initial conditions and inconsistent with generic LLM behavior. Negative results count.",
   "type": "module",
   "private": true,
@@ -9,7 +9,8 @@
     "typecheck": "tsc --noEmit",
     "build": "tsc -p tsconfig.json",
     "start": "node --enable-source-maps -r dotenv/config dist/main.js",
-    "preflight": "node --enable-source-maps -r dotenv/config dist/scripts/preflight.js"
+    "preflight": "node --enable-source-maps -r dotenv/config dist/scripts/preflight.js",
+    "lint": "tsx src/shared/lints/check.ts"
   },
   "keywords": ["agent", "emergence", "primordial", "cognitive-harness", "runcor", "experiment"],
   "author": "runcor <hello@runcor.ai>",
@@ -23,23 +24,29 @@
     "dotenv": "^16.4.5",
     "imapflow": "^1.0.171",
     "nodemailer": "^6.9.16",
-    "runcor-coherence": "file:../runcor-coherence",
+    "runcor": "file:../runcor",
+    "runcor-substrate": "file:../runcor-substrate",
+    "runcor-memory": "file:../runcor-memory",
+    "runcor-data": "file:../runcor-data",
+    "runcor-integration": "file:../runcor-integration",
     "runcor-dialectic": "file:../runcor-dialectic",
-    "runcor-drives": "file:../runcor-drives",
-    "runcor-goals": "file:../runcor-goals",
-    "runcor-identity": "file:../runcor-identity",
     "runcor-meta": "file:../runcor-meta",
-    "runcor-skills": "file:../runcor-skills",
-    "runcor-temporal": "file:../runcor-temporal",
     "runcor-watchdog": "file:../runcor-watchdog",
+    "runcor-skills": "file:../runcor-skills",
+    "runcor-drives": "file:../runcor-drives",
+    "runcor-identity": "file:../runcor-identity",
+    "runcor-goals": "file:../runcor-goals",
+    "runcor-temporal": "file:../runcor-temporal",
+    "runcor-coherence": "file:../runcor-coherence",
     "rpp-parser": "file:../rpp-parser"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.11",
     "@types/node": "^20.14.0",
     "@types/nodemailer": "^6.4.16",
+    "tsx": "^4.21.0",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"
   },
-  "//": "Phase 2 will pin runcor sibling dependencies. Cognitive harness (10) + existing siblings (4): runcor-substrate, runcor-memory, runcor-data, runcor-integration, runcor, rpp-parser, runcor-dialectic, runcor-meta, runcor-watchdog, runcor-skills, runcor-drives, runcor-identity, runcor-goals, runcor-temporal, runcor-coherence. Strategy (file:/git+https/npm-published) decided in Phase 2."
+  "//": "v0.2.0 — full 14-component cognitive harness. All 14 siblings pinned at the V2-002 versions (substrate 0.2.0, runcor 0.3.0, runcor-data 0.2.0, runcor-temporal 0.2.0, runcor-identity/goals/coherence 0.2.0, runcor-integration 0.2.0)."
 }
