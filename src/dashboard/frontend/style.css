@@ -162,3 +162,14 @@ footer a:hover { color: var(--text); }
 .hyp-evidence strong { color: var(--text2); }
 .hyp-rebuttal { font-size: 12px; color: var(--text3); line-height: 1.5; font-style: italic; padding: 0.4rem 0.55rem; background: rgba(245,158,11,0.06); border: 1px dashed rgba(245,158,11,0.3); border-radius: 5px; }
 .hyp-rebuttal strong { color: #f59e0b; font-style: normal; }
+
+/* V2-002 transcript additions: execution_complete event with rendered model output */
+.t-execution-complete { background: rgba(59,130,246,0.04); border-left: 2px solid rgba(59,130,246,0.4); padding: 0.5rem 0.7rem; margin: 0.4rem 0; border-radius: 4px; }
+.t-execution-complete .t-d-meta { font-size: 11px; color: var(--text3); margin-bottom: 0.4rem; }
+.t-reasoning { font-size: 13px; color: var(--text2); line-height: 1.55; padding: 0.4rem 0.55rem; margin-top: 0.3rem; background: rgba(0,0,0,0.2); border-radius: 4px; }
+.t-reasoning p { margin: 0.3rem 0; }
+.t-reasoning code { background: rgba(255,255,255,0.05); padding: 1px 4px; border-radius: 3px; font-size: 12px; }
+.t-reasoning pre { background: rgba(0,0,0,0.3); padding: 0.5rem; border-radius: 4px; overflow-x: auto; font-size: 12px; }
+.t-event { font-size: 11.5px; padding: 0.2rem 0.4rem; line-height: 1.5; color: var(--text3); }
+.t-event .t-time { color: var(--text3); margin-right: 0.4rem; font-family: monospace; }
+.t-event .t-tag { background: rgba(255,255,255,0.06); padding: 1px 5px; border-radius: 3px; margin-right: 0.4rem; font-size: 10.5px; }

@@ -226,10 +226,45 @@ const escapeHtml = (s) => s.replace(/[&<>"']/g, (c) =>
 const TRANSCRIPT_LIMIT = 200;
 let renderScheduled = false;
 
+// Parse model output text — usually JSON {action, args, reasoning} but may be plain markdown.
+function renderModelOutput(text) {
+  if (!text || typeof text !== 'string') return '';
+  // Strip ```json ... ``` fence if model wrapped its JSON in code blocks.
+  const fenceMatch = text.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?```\s*$/);
+  const stripped = fenceMatch ? fenceMatch[1].trim() : text.trim();
+  let parsed = null;
+  try { parsed = JSON.parse(stripped); } catch (_) { /* not JSON */ }
+  if (parsed && typeof parsed === 'object') {
+    const action = parsed.action ?? '(none)';
+    const args = parsed.args ? `<code class="t-payload">${escapeHtml(JSON.stringify(parsed.args))}</code>` : '';
+    const reasoning = typeof parsed.reasoning === 'string' && parsed.reasoning.trim()
+      ? `<div class="t-reasoning">${md(parsed.reasoning)}</div>`
+      : '';
+    return `
+      <div class="t-action"><span class="t-tag t-tag-action">action</span> <strong>${escapeHtml(String(action))}</strong> ${args}</div>
+      ${reasoning}`;
+  }
+  // Free-form markdown response (e.g. dialectic Player/Coach/Judge prose).
+  return `<div class="t-d-output">${md(text)}</div>`;
+}
+
 function renderEventLine(ev) {
   const time = new Date(ev.ts ?? Date.now()).toISOString().slice(11, 19);
   const type = ev.event ?? '?';
   const data = ev.data ?? {};
+  // Rich rendering for the events that carry model output.
+  if (type === 'execution_complete') {
+    const text = data?.result?.text ?? '';
+    const model = data?.result?.model ?? '?';
+    const provider = data?.result?.provider ?? '?';
+    const usage = data?.result?.usage;
+    const tokenSummary = usage ? `${usage.promptTokens ?? 0}p + ${usage.completionTokens ?? 0}c tok` : '';
+    return `
+      <div class="t-event t-execution-complete">
+        <div class="t-d-meta"><span class="t-time">${time}</span> <span class="t-tag">${type}</span> ${escapeHtml(provider)}/${escapeHtml(model)} · ${escapeHtml(tokenSummary)}</div>
+        ${renderModelOutput(text)}
+      </div>`;
+  }
   let summary = '';
   if (type === 'cycle_record') {
     summary = `status=${data.status ?? '?'} (${(data.endedAt ?? 0) - (data.startedAt ?? 0)}ms)`;
@@ -240,13 +275,13 @@ function renderEventLine(ev) {
   } else if (type === 'discernment_flagged') {
     summary = `law=${data.failedLawId ?? '?'}`;
   } else if (type === 'cost_request') {
-    summary = `cost=$${(data.cost ?? 0).toFixed(6)} model=${data.model ?? '?'}`;
+    summary = `cost=$${(data.cost ?? 0).toFixed(6)} model=${data.model ?? '?'} (${data.promptTokens ?? 0}p+${data.completionTokens ?? 0}c)`;
   } else if (type === 'next_wake_scheduled') {
     summary = `${Math.round((data.ms ?? 0) / 1000)}s — ${data.reason ?? ''}`;
   } else if (type === 'adapter_tool_call') {
-    summary = `${data.toolName ?? '?'}`;
+    summary = `${data.toolName ?? data.tool ?? '?'} ${data.success === false ? '(failed)' : ''}`;
   } else {
-    summary = JSON.stringify(data).slice(0, 80);
+    summary = JSON.stringify(data).slice(0, 100);
   }
   return `<div class="t-event"><span class="t-time">${time}</span> <span class="t-tag">${type}</span> ${escapeHtml(summary)}</div>`;
 }
