@@ -30,6 +30,19 @@ RUN for r in runcor runcor-substrate runcor-memory runcor-data runcor-integratio
 COPY . ./autonomous-company-v2/
 WORKDIR /workspace/autonomous-company-v2
 RUN npm install --no-audit --no-fund --include=optional
+
+# Explicit symlink fallback. npm's file: dep handling is unreliable in Linux containers
+# when the local package-lock was generated on a different filesystem (e.g. WSL/Windows).
+# Ensure every canonical sibling resolves from V2's node_modules regardless of npm behavior.
+RUN for r in runcor runcor-substrate runcor-memory runcor-data runcor-integration \
+             runcor-coherence runcor-dialectic runcor-drives runcor-goals \
+             runcor-identity runcor-meta runcor-skills runcor-temporal \
+             runcor-watchdog rpp-parser; do \
+      rm -rf /workspace/autonomous-company-v2/node_modules/$r && \
+      ln -s /workspace/$r /workspace/autonomous-company-v2/node_modules/$r ; \
+    done && \
+    ls -la /workspace/autonomous-company-v2/node_modules/ | grep -E "runcor|rpp"
+
 RUN npm run build
 
 # Persistent state (Railway-volume mount lives here).
