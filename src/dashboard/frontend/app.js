@@ -34,7 +34,7 @@ function renderOverview(elId, ov) {
 // ── poll panels ──
 async function refreshOnce() {
   const v2Tasks = [
-    fetchJson('/healthz').then((d) => renderOverview('v2-overview', { ...d, kind: 'v2' })),
+    fetchJson('/overview?role=v2').then((d) => renderOverview('v2-overview', d)),
     fetchJson('/drives?role=v2').then((d) => $('v2-drives').textContent = fmt(d?.summary ?? d)),
     fetchJson('/identity?role=v2').then((d) => $('v2-identity').textContent = fmt(d?.block ?? d)),
     fetchJson('/goals?role=v2').then((d) => $('v2-goals').textContent = fmt(d?.block ?? d)),
@@ -43,7 +43,7 @@ async function refreshOnce() {
     fetchJson('/memory?role=v2').then((d) => $('v2-memory').textContent = fmt(d)),
   ];
   const controlTasks = [
-    fetchJson('/healthz').then((d) => renderOverview('control-overview', { ...d, kind: 'control' })),
+    fetchJson('/overview?role=control').then((d) => renderOverview('control-overview', d)),
     fetchJson('/memory?role=control').then((d) => $('control-memory').textContent = fmt(d)),
   ];
   await Promise.all([...v2Tasks, ...controlTasks]);

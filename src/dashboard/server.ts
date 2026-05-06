@@ -136,6 +136,46 @@ export function startDashboard(args: DashboardArgs): DashboardHandle {
     args.bus.on(ev, fn);
   }
 
+  // Lightweight overview state — accumulated from bus events for the V2 process.
+  // Control runs in a separate process (per main.ts dispatcher), so its overview
+  // currently shows env-derived budget + zeros for runtime-tracked fields.
+  let overviewSpentUsd = 0;
+  let overviewLastCycleAt: number | null = null;
+  args.bus.on('cost_request', (ev: Record<string, unknown>) => {
+    const cost = typeof ev.cost === 'number' ? ev.cost : 0;
+    if (cost > 0) overviewSpentUsd += cost;
+  });
+  args.bus.on('cycle_record', (_ev: Record<string, unknown>) => {
+    overviewLastCycleAt = Date.now();
+  });
+
+  const handleOverview: RequestHandler = (req, res) => {
+    const url = new URL(req.url ?? '', 'http://x');
+    const role = paramOf(url, 'role') ?? 'v2';
+    const isV2 = role !== 'control';
+    const mem = isV2 ? args.memory : (args.controlMemory ?? args.memory);
+    const summariesPublished = mem
+      .getAll()
+      .filter((n) => Array.isArray(n.tags) && n.tags.includes('daily_summary'))
+      .length;
+    const lastCycleAt = isV2 ? overviewLastCycleAt : null;
+    const lastCycleStatus = lastCycleAt
+      ? new Date(lastCycleAt).toISOString().slice(11, 19) + ' UTC'
+      : '—';
+    jsonResponse(res, 200, {
+      role,
+      cycleCount: isV2 && args.getCurrentCycle ? args.getCurrentCycle() : 0,
+      lastCycleAt,
+      lastCycleStatus,
+      spentUsd: isV2 ? overviewSpentUsd : 0,
+      capUsd: isV2 ? args.env.v2BudgetUsd : args.env.controlBudgetUsd,
+      budgetUsd: isV2 ? args.env.v2BudgetUsd : args.env.controlBudgetUsd,
+      summariesPublished,
+      bootedAt: args.startupRecord.bootedAt,
+      terminated: args.terminationState.isTerminated(),
+    });
+  };
+
   const handleHealthz: RequestHandler = (_req, res) => {
     jsonResponse(res, 200, {
       ok: true,
@@ -393,6 +433,7 @@ export function startDashboard(args: DashboardArgs): DashboardHandle {
       const pathname = url.pathname;
 
       if (pathname === '/healthz' && method === 'GET') return handleHealthz(req, res);
+      if (pathname === '/overview' && method === 'GET') return handleOverview(req, res);
       if (pathname === '/startup-record' && method === 'GET') return handleStartupRecord(req, res);
       if (pathname === '/transcript' && method === 'GET') {
         const accept = req.headers.accept ?? '';
