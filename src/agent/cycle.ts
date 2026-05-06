@@ -1,444 +1,325 @@
-// V2 agent cycle — Phase 3: real harness integration.
+// V2 cycle orchestrator (T105) — replaces 001's hand-rolled cycle.
 //
-// Per US2 (spec.md), the cycle protocol:
-//   1. Drives compute pressures.
-//   2. Identity / Goals render their blocks.
-//   3. Substrate-style prompt-stack assembled.
-//   4. Dialectic reasons (Player/Coach/Judge — replaces single Player call).
-//   5. Action parsed from answer.
-//   6. Action recorded (Phase 5 wires real execution).
-//   7. Watchdog observes (post-cycle capability-gap scan).
-//   8. Coherence registers a Task for this cycle.
-//   9. Memory persists via our Store (each subsystem owns its DB too).
-//  10. Drives recompute from updated state (next cycle reads them).
+// One cycle:
+//   1. Compute drives (runcor-drives.computeDrives — stateless function).
+//   2. Build LayerContext (context-builder.ts §A).
+//   3. Trigger 'primordial-cycle' flow → engine.modelRouter.complete (substrate-patched).
+//   4. Parse response → action invocation (response-parser.ts).
+//   5. Invoke the action via engine.callAdapterTool (single intake — FR-092).
+//   6. Run side-effects pipeline (side-effects.ts §C; atomic per FR-018).
+//   7. Compute next-wake via temporal.computeNextWake (D1).
+//   8. If isDayBoundary, emit a day_boundary event (D2 — daily summary cycle is run-by-tool).
+//   9. Sleep until next wake; loop.
 
-import type { Store } from '../shared/db.js';
-import type { OpenRouterClient } from '../shared/openrouter.js';
-import type { AgentHarness } from './boot.js';
-import type { ActionDispatcher } from './dispatcher.js';
-import { assembleCyclePrompt } from './prompts/cycle_prompt.js';
+import type { Runcor, Execution } from 'runcor';
+import type { MemorySystem } from 'runcor-memory';
+import type { DataCube } from 'runcor-data';
+import type { Identity } from 'runcor-identity';
+import type { Goals } from 'runcor-goals';
+import type { Coherence } from 'runcor-coherence';
+import type { Watchdog } from 'runcor-watchdog';
+import type { Skills } from 'runcor-skills';
+import type { Temporal } from 'runcor-temporal';
+import type { DialecticConfig, DialecticResult } from 'runcor-dialectic';
+import { computeDrives } from 'runcor-drives';
+import type { DrivePressure } from 'runcor-drives';
 
-const SENSES = ['web_scrape', 'web_search', 'http_fetch', 'fs_read', 'inbox_read', 'time', 'fetch_chunk'];
-const ACTIONS = ['email_send', 'http_post', 'fs_write', 'git_commit_push', 'publish_post', 'schedule_self', 'terminate'];
+import type { EventBus } from '../dashboard/event-bus.js';
+import { buildLayerContext } from './context-builder.js';
+import { runSideEffects, type ActionInvocation } from './side-effects.js';
+import { parseCycleResponse } from './response-parser.js';
 
-export interface AgentCycleInput {
-  store: Store;
-  /** Used only for token-cost budget tracking on dialectic calls. */
-  openrouter: OpenRouterClient;
-  harness: AgentHarness;
-  cycleNumber: number;
-  /** Budget remaining (USD). Drives resource pressure. */
-  budgetRemainingUsd: number;
-  /** Estimated USD burn per cycle. Drives resource pressure. */
-  burnPerCycleUsd: number;
-  /** Optional live-event hook (used by orchestrator to feed dashboard SSE). */
-  onEvent?: (event: { type: 'cycle' | 'decision' | 'action'; payload: unknown }) => void;
-  /** Action dispatcher — when omitted, actions are recorded but not executed. */
-  dispatcher?: ActionDispatcher;
-  /** Findings from the previous cycle's watchdog audit, surfaced into this prompt. */
-  previousWatchdogFindings?: Array<{ category: string; capability: string; problem: string; dialecticReason?: string }>;
+export type CycleStatus = 'completed' | 'completed_with_flag' | 'cycle_failed_call';
+
+export interface CycleRecord {
+  cycle: number;
+  agentRole: 'v2' | 'control';
+  startedAt: number;
+  endedAt: number;
+  status: CycleStatus;
+  modelCalls: number;
+  totalTokens: number;
+  totalCostUsd: number;
+  actionInvoked?: { name: string; args: Record<string, unknown>; resultSummary: string } | null;
+  memoryWrites: number;
+  dataIngestEvents: number;
+  flag?: { flagNodeId?: string; failedLawId?: string; attemptsCount: number };
+  failureReason?: string;
 }
 
-export interface AgentCycleResult {
-  cycleId: number;
-  prompt: string;
-  answer: string;
-  parsedAction?: { action: string; payload: unknown; thought?: string };
-  watchdogFindings: number;
-  /** Watchdog findings from THIS cycle, persisted so the runner can feed them to the next cycle. */
-  watchdogFindingsList: Array<{ category: string; capability: string; problem: string; dialecticReason?: string }>;
-  coherenceTaskId: number;
-  /** Max drive pressure intensity 0..1 — runner uses this for adaptive cadence. */
-  maxDriveIntensity: number;
+export interface RunCyclesArgs {
+  agentRole: 'v2' | 'control';
+  flowName: 'primordial-cycle' | 'naive-control-cycle';
+  userPrompt: string;
+  engine: Runcor;
+  memory: MemorySystem;
+  dataCube: DataCube;
+  goals: Goals | null;
+  identity: Identity | null;
+  coherence: Coherence | null;
+  watchdog: Watchdog | null;
+  skills: Skills | null;
+  temporal: Temporal | null;
+  dialectic: ((config: DialecticConfig) => Promise<DialecticResult>) | null;
+  bus: EventBus;
+  /** Maximum cycles before terminating. */
+  maxCycles: number;
+  /** Budget cap in USD (per FR-110). */
+  budgetUsd: number;
+  /** Returns true when terminate() was invoked or budget/cycles hit. */
+  isTerminated(): boolean;
+  /** Optional fixed sleep override (ms). When set, used in place of temporal.computeNextWake. */
+  fixedSleepMs?: number;
+  /** Optional start cycle override (resume support). Defaults to 0. */
+  startCycle?: number;
+  /** Test/dev sleep override. */
+  sleep?: (ms: number) => Promise<void>;
 }
 
-/** Extract the first balanced `{...}` JSON object from text. Returns null if none. */
-function extractFirstObject(text: string): string | null {
-  const start = text.indexOf('{');
-  if (start === -1) return null;
-  let depth = 0;
-  let inString = false;
-  let escape = false;
-  for (let i = start; i < text.length; i++) {
-    const ch = text[i]!;
-    if (escape) { escape = false; continue; }
-    if (ch === '\\') { escape = true; continue; }
-    if (ch === '"') { inString = !inString; continue; }
-    if (inString) continue;
-    if (ch === '{') depth++;
-    else if (ch === '}') {
-      depth--;
-      if (depth === 0) return text.slice(start, i + 1);
-    }
+const DEFAULT_SLEEP = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+interface FlagEvent {
+  cycle: number;
+  flagNodeId?: string;
+  failedLawId?: string;
+}
+
+function captureDrivePressure(memory: MemorySystem, args: RunCyclesArgs, currentCycle: number): DrivePressure {
+  const budgetUsed = currentCycle > 0 ? Math.min(args.budgetUsd, currentCycle * (args.budgetUsd / Math.max(1, args.maxCycles))) : 0;
+  const remaining = Math.max(0, args.budgetUsd - budgetUsed);
+  const burnPerCycle = args.budgetUsd / Math.max(1, args.maxCycles);
+  const cyclesUsed = currentCycle;
+  const allMemory = memory.getAll();
+  const tagSet = new Set<string>();
+  for (const m of allMemory) for (const t of m.tags ?? []) tagSet.add(t);
+  return computeDrives({
+    resource: { remaining, total: args.budgetUsd, burnPerCycle, cyclesUsed },
+    curiosity: {
+      exploredAreas: Array.from(tagSet),
+      knownAreas: Array.from(tagSet),
+      recentExplorationCycles: 0,
+    },
+    reactivity: { pendingEvents: [] },
+    coherence: { selfTheoryClaims: [], recentActions: [] },
+  });
+}
+
+function buildRecentActions(memory: MemorySystem): { actions: Array<{ tool: string; count: number; lastUsed?: string }>; records: Array<{ action: string; confidence: number; score: number }> } {
+  const counts = new Map<string, { count: number; lastUsed?: string }>();
+  const records: Array<{ action: string; confidence: number; score: number }> = [];
+  for (const node of memory.getAll()) {
+    const tags = node.tags ?? [];
+    if (!tags.includes('episodic')) continue;
+    const actionTag = tags.find((t) => t.startsWith('action:'));
+    if (!actionTag) continue;
+    const tool = actionTag.slice(7);
+    const cur = counts.get(tool) ?? { count: 0 };
+    cur.count += 1;
+    counts.set(tool, cur);
+    records.push({ action: tool, confidence: 0.7, score: 0.7 });
   }
-  return null;
-}
-
-export async function runAgentCycle(input: AgentCycleInput): Promise<AgentCycleResult> {
-  const { store, harness, cycleNumber } = input;
-
-  // 0. Open the cycle row.
-  const cycleRow = store.startCycle('v2', cycleNumber);
-
-  try {
-    // 1. Compute drives — feed all four (resource, curiosity, reactivity, coherence).
-    // Previously only resource was fed → curiosity/reactivity/coherence were undefined →
-    // emitted no pressure → agent had no internal reason to act → 32/45 cycles were 'none'.
-    const allActions = store.cyclesFor('v2').flatMap((c) => store.actionsFor(c.id));
-    const sensesUsed = new Set(allActions.map((a) => a.action).filter((a) => SENSES.includes(a)));
-    const senseCyclesAgo = (() => {
-      // Cycles since the agent last invoked any sense action (not 'none').
-      for (let i = allActions.length - 1; i >= 0; i--) {
-        if (SENSES.includes(allActions[i]!.action)) return cycleNumber - allActions[i]!.cycleId;
-      }
-      return cycleNumber;
-    })();
-
-    const drives = harness.drivesCompute({
-      resource: {
-        remaining: input.budgetRemainingUsd,
-        total: input.budgetRemainingUsd + (cycleNumber * input.burnPerCycleUsd),
-        burnPerCycle: input.burnPerCycleUsd,
-        cyclesUsed: cycleNumber,
-      },
-      curiosity: {
-        // Knows about all 5 senses; explored = those it has actually invoked.
-        // recentExplorationCycles grows the longer it ignores its senses.
-        knownAreas: SENSES,
-        exploredAreas: Array.from(sensesUsed),
-        recentExplorationCycles: senseCyclesAgo,
-      },
-      reactivity: {
-        // For Phase 6 we synthesize a "the world has been quiet" signal — every
-        // 10 cycles a low-urgency 'tick' event arrives. Once Phase 7 wires real
-        // inbox / webhook polling, replace with actual events.
-        pendingEvents: cycleNumber > 0 && cycleNumber % 10 === 0
-          ? [{ kind: 'cycle-tick', urgency: 'low' as const, age: 0 }]
-          : [],
-      },
-      coherence: {
-        // Compare self-theory claims against actually-taken non-'none' actions.
-        // If identity says "I observe and act" but every cycle was 'none',
-        // coherence pressure rises.
-        selfTheoryClaims: safeIdentityClaims(harness),
-        recentActions: allActions.slice(-10).map((a) => ({
-          action: a.action,
-          confidence: 0.7,
-        })),
-      },
-    });
-
-    // 2. Render identity + goals + drives.
-    const drivesText = harness.drivesRender(drives);
-    const identityText = safeIdentityRender(harness);
-    const goalsText = harness.goals.renderBlock(cycleNumber);
-
-    // 3. Recent action results — surface what previous actions actually returned
-    //    so the agent can build on them instead of re-deciding from a void each cycle.
-    const recentActionRows = allActions.slice(-5);
-    const recentActionResults = recentActionRows.map((a) => ({
-      cycleNumber: store.cyclesFor('v2').find((c) => c.id === a.cycleId)?.cycleNumber ?? a.cycleId,
-      action: a.action,
-      success: a.error === undefined,
-      result: a.result,
-      ...(a.error !== undefined ? { error: a.error } : {}),
-    }));
-
-    // 3b. Loop detection — if the agent has picked the same (action, payload-hash)
-    //     3+ times consecutively, surface a warning so it knows to break out.
-    let loopWarning: string | undefined;
-    if (allActions.length >= 3) {
-      const last3 = allActions.slice(-3);
-      const sigs = last3.map((a) => `${a.action}|${JSON.stringify(a.payload)}`);
-      if (sigs[0] === sigs[1] && sigs[1] === sigs[2]) {
-        loopWarning = `You have picked the SAME action with the SAME payload 3 cycles in a row: ${last3[0]!.action} ${JSON.stringify(last3[0]!.payload).slice(0, 200)}. Either it is genuinely the right next move (rare — explain why in your thought) or you are looping. Try something different — a different URL, a different sense, a different verb.`;
-      }
-    }
-
-    // 4. Assemble cycle prompt (substrate-style stack).
-    const prompt = assembleCyclePrompt({
-      cycleNumber,
-      drives,
-      drivesText,
-      identityText,
-      goalsText,
-      capabilities: { senses: SENSES, actions: ACTIONS },
-      recentActionResults,
-      ...(loopWarning !== undefined ? { loopWarning } : {}),
-      ...(input.previousWatchdogFindings && input.previousWatchdogFindings.length > 0
-        ? { watchdogFindings: input.previousWatchdogFindings }
-        : {}),
-    });
-
-    // 4. Dialectic reasons.
-    const result = await harness.dialectic({ problem: prompt, maxRounds: 2 });
-    const answer = result.answer;
-
-    // Persist as a decision row. Real cost comes from dialectic (Player+Coach+Judge);
-    // dialectic owns its own cost tracker so we record what it returns rather than
-    // double-charging via OpenRouterClient.
-    // Persist each Player / Coach / Judge round as its own decision row so the
-    // dashboard transcript shows the full deliberation, not just the final answer.
-    // Falls back to one synthetic 'player' row when the dialectic doesn't expose
-    // a transcript (mocks in tests).
-    const rounds = result.transcript && result.transcript.length > 0
-      ? result.transcript
-      : [{ role: 'player', model: 'dialectic',
-           content: answer, costUsd: result.costUsd ?? 0,
-           promptTokens: result.promptTokens ?? 0,
-           completionTokens: result.completionTokens ?? 0 }];
-    let lastDecisionRecord: ReturnType<typeof store.recordDecision> | undefined;
-    for (const r of rounds) {
-      lastDecisionRecord = store.recordDecision({
-        kind: 'v2',
-        cycleId: cycleRow.id,
-        role: r.role,
-        model: r.model,
-        prompt: r.role === 'player' && r === rounds[0] ? prompt : '',  // only first row carries the cycle prompt
-        output: r.content,
-        costUsd: r.costUsd,
-        promptTokens: r.promptTokens,
-        completionTokens: r.completionTokens,
-        createdAt: new Date().toISOString(),
-      });
-    }
-    void input.openrouter; // referenced for symmetry; dialectic owns its own cost tracking
-    input.onEvent?.({ type: 'decision', payload: {
-      cycleNumber,
-      rounds: rounds.length,
-      totalCostUsd: rounds.reduce((s, r) => s + r.costUsd, 0),
-      totalTokens: rounds.reduce((s, r) => s + r.promptTokens + r.completionTokens, 0),
-      preview: answer.slice(0, 200),
-    }});
-    void lastDecisionRecord;
-
-    // 5. Parse action — try first object, then fall back to a "repair" dialectic
-    //    call if the Player's output didn't include a parseable JSON action.
-    let parsed: AgentCycleResult['parsedAction'] | undefined;
-    const tryParse = (text: string): AgentCycleResult['parsedAction'] | undefined => {
-      const objText = extractFirstObject(text);
-      if (objText === null) return undefined;
-      try {
-        const obj = JSON.parse(objText) as Record<string, unknown>;
-        if (typeof obj['action'] === 'string') {
-          return {
-            action: obj['action'] as string,
-            payload: obj['payload'],
-            ...(typeof obj['thought'] === 'string' ? { thought: obj['thought'] as string } : {}),
-          };
-        }
-      } catch { /* */ }
-      return undefined;
-    };
-    parsed = tryParse(answer);
-    if (!parsed) {
-      // Repair pass — single re-prompt asking for ONLY the JSON.
-      try {
-        const repair = await harness.dialectic({
-          problem: `Your previous response did not contain a parseable JSON action object. Re-emit ONLY the JSON, no prose, no code fences:\n\n{"action": "<action_name>", "payload": {...}, "thought": "<one short sentence>"}\n\nYour previous response was:\n${answer.slice(0, 1000)}`,
-          maxRounds: 1,
-        });
-        parsed = tryParse(repair.answer);
-      } catch { /* repair failed; cycle proceeds with no action */ }
-    }
-    // 6. EXECUTE the action via dispatcher (real provider call), then record.
-    //    Per-action timeout (45s) + result size cap (64KB at storage).
-    if (parsed) {
-      let executionResult: unknown = 'no-dispatcher';
-      let executionError: string | undefined;
-      if (input.dispatcher) {
-        const dispatcher = input.dispatcher;
-        try {
-          const dispatched = await Promise.race([
-            dispatcher.execute(parsed.action, parsed.payload),
-            new Promise<never>((_, reject) =>
-              setTimeout(() => reject(new Error(`action ${parsed!.action} timed out after 45s`)), 45_000),
-            ),
-          ]);
-          executionResult = dispatched.result;
-          if (!dispatched.success && dispatched.error) executionError = dispatched.error;
-        } catch (e) {
-          executionError = (e as Error).message;
-        }
-      }
-      // Cap result at 64KB at storage (chunked retrieval still works for the head).
-      const cappedResult = capResultSize(executionResult, 64 * 1024);
-      const recordOpts: Parameters<typeof store.recordAction>[4] = { result: cappedResult };
-      if (executionError !== undefined) recordOpts.error = executionError;
-      store.recordAction('v2', cycleRow.id, parsed.action, parsed.payload, recordOpts);
-      input.onEvent?.({ type: 'action', payload: {
-        cycleNumber, action: parsed.action,
-        ...(parsed.thought ? { thought: parsed.thought } : {}),
-        success: executionError === undefined,
-        ...(executionError !== undefined ? { error: executionError } : {}),
-      }});
-    }
-
-    // 7. Watchdog observes.
-    const findings = await harness.watchdog.audit({
-      statedProblems: parsed?.thought
-        ? [{ text: parsed.thought, source: `cycle-${cycleNumber}` }]
-        : [],
-      availableCapabilities: [...SENSES, ...ACTIONS].map((name) => ({
-        name,
-        description: SENSES.includes(name) ? `sense: ${name}` : `action: ${name}`,
-      })),
-      recentActions: parsed && parsed.action !== 'none'
-        ? [{ tool: parsed.action, count: 1, lastUsed: String(cycleNumber) }]
-        : [],
-      skipValidation: true, // Phase 3 — defer dialectic-validation to keep cycle deterministic
-    });
-
-    // 8. Coherence registers this cycle as a Task.
-    const taskId = harness.coherence.submit({
-      contract: `#> spec\nGoal: cycle ${cycleNumber} — autonomous next-step decision\nMUST: produce a JSON action object`,
-      inputs: { cycleNumber, prompt },
-    });
-
-    // 9. Periodic identity reflection (every 20 cycles) and goals proposal (every 30 cycles).
-    //    Without these, identity & goals stay forever empty — the IDENTITY and GOALS
-    //    blocks in the prompt are always "(none discovered)". Each trigger uses the
-    //    dialectic, costing one extra Player+Coach+Judge round.
-    if (cycleNumber > 0 && cycleNumber % 20 === 0) {
-      try {
-        await harness.identity.reflect({
-          recentActions: allActions.slice(-15).map((a) => ({
-            action: a.action,
-            confidence: a.error === undefined ? 0.7 : 0.3,
-            score: a.error === undefined ? 0.7 : 0.2,
-            metadata: { payload: a.payload, ...(a.error !== undefined ? { error: a.error } : {}) },
-          })),
-          context: `cycle ${cycleNumber}; last action chosen: ${parsed?.action ?? 'none'}`,
-          dialectic: harness.dialectic,
-          currentCycle: cycleNumber,
-          cause: 'periodic-reflection',
-        });
-      } catch (e) { console.warn(`[runcor] identity.reflect cycle ${cycleNumber} failed: ${(e as Error).message}`); }
-    }
-    if (cycleNumber > 0 && cycleNumber % 30 === 0) {
-      try {
-        const candidates = await harness.goals.propose({
-          recentActions: allActions.slice(-15).map((a) => ({
-            action: a.action, score: a.error === undefined ? 0.7 : 0.2,
-          })),
-          context: `cycle ${cycleNumber}; what purpose does the agent's recent activity point to?`,
-          level: 'purpose',
-          dialectic: harness.dialectic,
-        });
-        if (candidates.length > 0) {
-          // Auto-accept the first candidate so it actually shows up in the goal stack.
-          // (Spec-purist: in production, an operator could review these instead.)
-          harness.goals.accept(candidates[0]!, { currentCycle: cycleNumber });
-        }
-      } catch (e) { console.warn(`[runcor] goals.propose cycle ${cycleNumber} failed: ${(e as Error).message}`); }
-    }
-    // Always: tick the goals decay each cycle so unmaintained goals retire.
-    try { harness.goals.decayStep(cycleNumber); } catch { /* noop */ }
-
-    // 10. Periodic skill proposal (every 50 cycles) — synthesize an R++ skill
-    //     from the most-recent successful trajectory so a new capability can
-    //     emerge from observed patterns. Persisted to skill_proposals table.
-    if (cycleNumber > 0 && cycleNumber % 50 === 0) {
-      try {
-        const successful = allActions.filter((a) => a.error === undefined && a.action !== 'none').slice(-10);
-        if (successful.length >= 3) {
-          const proposal = await harness.skills.proposeSkill({
-            pattern: {
-              name: `cycle-${cycleNumber}-pattern`,
-              description: `Pattern extracted from ${successful.length} recent successful actions at cycle ${cycleNumber}`,
-              context: `Autonomous primordial agent. Recent actions span: ${[...new Set(successful.map((a) => a.action))].join(', ')}`,
-              trajectories: successful.map((a) => ({
-                action: a.action,
-                input: a.payload,
-                output: a.result,
-                score: 0.8,
-                metadata: { cycleId: a.cycleId },
-              })),
-            },
-            externalNames: [...SENSES, ...ACTIONS],
-          });
-          store.recordSkillProposal({
-            cycleNumber,
-            name: proposal.name,
-            description: proposal.description,
-            rppSource: proposal.rppSource,
-            confidence: proposal.confidence,
-            parsedCleanly: proposal.parsedCleanly,
-            attempts: proposal.attempts,
-            trajectoryCount: proposal.trajectoryCount,
-          });
-        }
-      } catch (e) { console.warn(`[runcor] skills.proposeSkill cycle ${cycleNumber} failed: ${(e as Error).message.slice(0, 200)}`); }
-    }
-
-    // Done.
-    const findingsList = findings.map((f) => ({
-      category: String(f.category),
-      capability: f.capability,
-      problem: f.problem,
-      ...(f.dialecticReason !== undefined ? { dialecticReason: f.dialecticReason } : {}),
-    }));
-    store.completeCycle(cycleRow.id, 'complete');
-    input.onEvent?.({ type: 'cycle', payload: {
-      cycleNumber, status: 'complete',
-      action: parsed?.action ?? 'none',
-      watchdogFindings: findings.length,
-      coherenceTaskId: taskId,
-    }});
-    return {
-      cycleId: cycleRow.id,
-      prompt,
-      answer,
-      ...(parsed !== undefined ? { parsedAction: parsed } : {}),
-      watchdogFindings: findings.length,
-      watchdogFindingsList: findingsList,
-      coherenceTaskId: taskId,
-      maxDriveIntensity: drives.maxIntensity ?? 0,
-    };
-  } catch (err) {
-    store.completeCycle(cycleRow.id, 'failed');
-    throw err;
-  }
-}
-
-/** Cap a value at maxBytes (UTF-8) for storage. Strings get truncated; objects
- *  get serialized then truncated; primitive types pass through. */
-function capResultSize(v: unknown, maxBytes: number): unknown {
-  if (v === null || v === undefined) return v;
-  if (typeof v === 'string') {
-    if (v.length <= maxBytes) return v;
-    return v.slice(0, maxBytes) + `\n…[storage cap reached at ${maxBytes} bytes; original was ${v.length} bytes]`;
-  }
-  if (typeof v === 'number' || typeof v === 'boolean') return v;
-  // For objects, serialize, check size, truncate JSON if needed.
-  const s = JSON.stringify(v);
-  if (s.length <= maxBytes) return v;
   return {
-    __truncated: true,
-    __originalBytes: s.length,
-    __cap: maxBytes,
-    head: s.slice(0, maxBytes - 200),
+    actions: Array.from(counts.entries()).map(([tool, v]) => ({ tool, count: v.count, ...(v.lastUsed ? { lastUsed: v.lastUsed } : {}) })),
+    records: records.slice(-20),
   };
 }
 
-function safeIdentityRender(harness: AgentHarness): string {
-  // Identity may have no snapshots yet (pure void seed). renderBlock should handle that
-  // but we guard so cycle 0 doesn't fail before reflection has run.
-  try {
-    const text = harness.identity.renderBlock();
-    return text || '(no self-theory yet — to be discovered)';
-  } catch {
-    return '(no self-theory yet — to be discovered)';
-  }
-}
+export async function runCycles(args: RunCyclesArgs): Promise<{ cyclesRun: number; reason: string; spentUsd: number }> {
+  const sleep = args.sleep ?? DEFAULT_SLEEP;
+  let cycle = args.startCycle ?? 0;
+  let spentUsd = 0;
+  let lastDayBoundaryCycle: number | null = null;
+  let dayBoundaryStartTs = Date.now();
+  const recentFlags: number[] = [];
 
-function safeIdentityClaims(harness: AgentHarness): string[] {
-  // Surface current self-theory claims for the coherence drive to compare
-  // against actions taken. Empty until the agent has reflected.
+  const costHandler = (ev: { cost: number }): void => {
+    if (typeof ev.cost === 'number') spentUsd += ev.cost;
+  };
+  args.engine.on('cost:request', costHandler);
+
+  let flagThisCycle: FlagEvent | null = null;
+  const flagHandler = (payload: Record<string, unknown>): void => {
+    flagThisCycle = {
+      cycle: typeof payload.cycle === 'number' ? payload.cycle : cycle,
+      ...(typeof payload.flagNodeId === 'string' ? { flagNodeId: payload.flagNodeId } : {}),
+      ...(typeof payload.failedLawId === 'string' ? { failedLawId: payload.failedLawId } : {}),
+    };
+  };
+  args.bus.on('discernment_flagged', flagHandler);
+
   try {
-    const current = harness.identity.current() as { claims?: string[] } | undefined;
-    return current?.claims ?? [];
-  } catch {
-    return [];
+    while (cycle < args.maxCycles && !args.isTerminated() && spentUsd < args.budgetUsd) {
+      flagThisCycle = null;
+      const startedAt = Date.now();
+
+      const drivePressure = captureDrivePressure(args.memory, args, cycle);
+      const { layerContext, memoryRecallQuery } = await buildLayerContext({
+        cycle,
+        agentRole: args.agentRole,
+        engine: args.engine,
+        memory: args.memory,
+        dataCube: args.dataCube,
+        goals: args.goals,
+        drivePressure,
+      });
+
+      args.bus.emit('prompt_assembled', {
+        cycle,
+        agentRole: args.agentRole,
+        memoryRecallQuery,
+        nonEmptyLayers: layerContext.recalledNodes.length > 0
+          ? ['laws', 'reality', 'drives', 'goals', 'identity', 'capabilities', 'memory_recall']
+          : ['laws', 'drives', 'capabilities'],
+      });
+
+      let status: CycleStatus = 'completed';
+      let action: ActionInvocation | null = null;
+      const modelCalls = 1;
+      let totalTokens = 0;
+      let failureReason: string | undefined;
+      let responseText = '';
+
+      try {
+        const exec: Execution = await args.engine.trigger(args.flowName, {
+          idempotencyKey: `${args.agentRole}-cycle-${cycle}-${startedAt}`,
+          input: { layerContext, userPrompt: args.userPrompt },
+        });
+        const result = exec.result as { text?: string; usage?: { promptTokens: number; completionTokens: number } } | undefined;
+        responseText = result?.text ?? '';
+        if (result?.usage) {
+          totalTokens = (result.usage.promptTokens ?? 0) + (result.usage.completionTokens ?? 0);
+        }
+      } catch (err) {
+        status = 'cycle_failed_call';
+        failureReason = err instanceof Error ? err.message : String(err);
+      }
+
+      if (status !== 'cycle_failed_call' && responseText) {
+        const parsed = parseCycleResponse(responseText);
+        if (parsed && parsed.action !== 'none') {
+          let resultSummary = '';
+          try {
+            const qualifiedName = parsed.action.includes('.') ? parsed.action : `v2-local-actions.${parsed.action}`;
+            const toolResult = await args.engine.callAdapterTool(qualifiedName, parsed.args);
+            resultSummary = toolResult.content?.[0]?.text ?? '';
+            if (toolResult.isError) resultSummary = `ERROR: ${resultSummary}`;
+          } catch (toolErr) {
+            resultSummary = `tool_dispatch_error: ${toolErr instanceof Error ? toolErr.message : String(toolErr)}`;
+          }
+          action = { name: parsed.action, args: parsed.args, resultSummary, reasoning: parsed.reasoning };
+        }
+      }
+
+      if (flagThisCycle) {
+        status = 'completed_with_flag';
+        recentFlags.push(cycle);
+        const lower = cycle - 9;
+        while (recentFlags.length > 0 && (recentFlags[0] ?? Infinity) < lower) recentFlags.shift();
+        if (recentFlags.length >= 5) {
+          args.bus.emit('flag_burst_warning', { window: 10, flagCount: recentFlags.length, recentCycles: recentFlags.slice() });
+        }
+      }
+
+      let memoryWrites = 0;
+      let dataIngestEvents = 0;
+      if (status !== 'cycle_failed_call') {
+        const recent = buildRecentActions(args.memory);
+        const sideEffects = await runSideEffects({
+          cycle,
+          memory: args.memory,
+          dataCube: args.dataCube,
+          identity: args.identity,
+          goals: args.goals,
+          watchdog: args.watchdog,
+          skills: args.skills,
+          dialectic: args.dialectic,
+          action,
+          recentActions: recent.actions,
+          recentActionRecords: recent.records,
+          statedProblems: [],
+          availableCapabilities: layerContext.capabilityList,
+        });
+        memoryWrites =
+          (sideEffects.episodicNodeId ? 1 : 0) +
+          sideEffects.watchdogFindings +
+          (sideEffects.identityReflected ? 1 : 0) +
+          sideEffects.goalProposalsAccepted +
+          (sideEffects.skillSynthesized ? 1 : 0);
+        dataIngestEvents = sideEffects.dataIngestEvents;
+      }
+
+      const endedAt = Date.now();
+      const record: CycleRecord = {
+        cycle,
+        agentRole: args.agentRole,
+        startedAt,
+        endedAt,
+        status,
+        modelCalls,
+        totalTokens,
+        totalCostUsd: spentUsd,
+        actionInvoked: action ? { name: action.name, args: action.args, resultSummary: action.resultSummary.slice(0, 500) } : null,
+        memoryWrites,
+        dataIngestEvents,
+        ...(flagThisCycle
+          ? {
+              flag: {
+                ...((flagThisCycle as FlagEvent).flagNodeId ? { flagNodeId: (flagThisCycle as FlagEvent).flagNodeId as string } : {}),
+                ...((flagThisCycle as FlagEvent).failedLawId ? { failedLawId: (flagThisCycle as FlagEvent).failedLawId as string } : {}),
+                attemptsCount: 3,
+              },
+            }
+          : {}),
+        ...(failureReason ? { failureReason } : {}),
+      };
+      args.bus.emit('cycle_record', record as unknown as Record<string, unknown>);
+
+      if (args.temporal) {
+        const realHoursSince = (Date.now() - dayBoundaryStartTs) / 3_600_000;
+        const boundary = args.temporal.isDayBoundary({
+          currentCycle: cycle,
+          lastBoundaryCycle: lastDayBoundaryCycle,
+          realHoursSinceLastBoundary: realHoursSince,
+        });
+        if (boundary) {
+          args.bus.emit('day_boundary', { cycle, lastBoundaryCycle: lastDayBoundaryCycle });
+          lastDayBoundaryCycle = cycle;
+          dayBoundaryStartTs = Date.now();
+        }
+      }
+
+      cycle += 1;
+      if (cycle >= args.maxCycles) break;
+      if (args.isTerminated()) break;
+      if (spentUsd >= args.budgetUsd) break;
+
+      let waitMs = args.fixedSleepMs ?? 0;
+      if (!args.fixedSleepMs && args.temporal) {
+        const wake = args.temporal.computeNextWake({
+          drives: {
+            resource: drivePressure.resource?.intensity ?? 0,
+            curiosity: drivePressure.curiosity?.intensity ?? 0,
+            reactivity: drivePressure.reactivity?.intensity ?? 0,
+            coherence: drivePressure.coherence?.intensity ?? 0,
+          },
+          pendingDeadlines: 0,
+          overdueCommitments: 0,
+          unresolvedCoherenceProblems: args.coherence?.problems().length ?? 0,
+          currentCycle: cycle,
+        });
+        waitMs = wake.ms;
+        args.bus.emit('next_wake_scheduled', { cycle, ms: wake.ms, reason: wake.reason });
+      }
+      if (waitMs > 0) await sleep(waitMs);
+    }
+
+    let reason = 'maxCycles';
+    if (args.isTerminated()) reason = 'terminated';
+    else if (spentUsd >= args.budgetUsd) reason = 'budgetExhausted';
+
+    return { cyclesRun: cycle, reason, spentUsd };
+  } finally {
+    args.engine.off('cost:request', costHandler as Parameters<typeof args.engine.off>[1]);
+    args.bus.off('discernment_flagged', flagHandler);
   }
 }

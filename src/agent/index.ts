@@ -1,170 +1,69 @@
-// V2 agent runner — Phase 3: real harness wiring.
-// Cadence is adaptive: drive pressure scales the inter-cycle sleep; an
-// outstanding schedule_self request, when its wake fires, overrides the next sleep.
+// V2 agent runner (T106) — entry point for the V2 process.
+//
+// Calls the central boot orchestrator (src/boot/boot.ts) to construct the full 14-component
+// harness, then drives `runCycles` from cycle.ts until terminate / budget / maxCycles hit.
+// The dashboard is started here too so the operator + observers see live state from cycle 0.
 
-import { Store } from '../shared/db.js';
-import { OpenRouterClient, BudgetExceededError } from '../shared/openrouter.js';
-import { bootHarness, closeHarness, type DialecticLike } from './boot.js';
-import { runAgentCycle } from './cycle.js';
-import { isDayBoundary, reflectAndPublish, type DayBoundaryConfig } from './daily.js';
-import type { ActionDispatcher } from './dispatcher.js';
+import { boot } from '../boot/boot.js';
+import { runCycles } from './cycle.js';
+import { startDashboard } from '../dashboard/server.js';
+import type { BootedHarness } from '../boot/boot.js';
 
-export interface AgentRunnerConfig {
-  store?: Store;
-  dbPath?: string;
-  apiKey: string;
-  budgetCapUsd: number;
-  maxCycles: number;
-  intervalSeconds: number;
-  /** Caller-provided dialectic. Production = runcor-dialectic; tests = mock. */
-  dialectic: DialecticLike;
-  /** Optional per-component DB paths. Default: in-memory. */
-  harnessDbPaths?: { identity?: string; goals?: string; temporal?: string; meta?: string; coherence?: string };
-  /** Estimated USD burn per cycle, fed to drives. Default 0.005. */
-  burnPerCycleUsd?: number;
-  /** Day-boundary detection config. */
-  dayBoundary?: DayBoundaryConfig;
-  /** Public URL prefix for published-summary links. Default: localhost. */
-  publicUrlPrefix?: string;
-  /** Optional pause flag the runner consults between cycles (operator pause). */
-  isPaused?: () => boolean;
-  /** Optional callback fired when a daily summary is published. */
-  onDailySummary?: (summary: { dayNumber: number; summaryId: number; text: string; publicUrl: string }) => void;
-  /** Optional callback fired on each cycle / decision / action — used for live SSE. */
-  onEvent?: (event: { type: 'cycle' | 'decision' | 'action'; payload: unknown }) => void;
-  /** Action dispatcher — when omitted actions are recorded but not executed. */
-  dispatcher?: ActionDispatcher;
-  sleepImpl?: (ms: number) => Promise<void>;
-  client?: OpenRouterClient;
-}
+const V2_USER_PROMPT = `Choose your next action based on the current state. Reply with a JSON object: {"action": "<tool_name|none>", "args": {...}, "reasoning": "<one short sentence>"}.`;
 
 export interface AgentRunResult {
   cyclesRun: number;
-  reason: 'maxCycles' | 'budgetExhausted' | 'terminated' | 'error';
+  reason: string;
   totalSpentUsd: number;
+  terminationReason: string | null;
 }
 
-const defaultSleep = (ms: number) => new Promise<void>(res => setTimeout(res, ms));
+export async function runAgent(): Promise<AgentRunResult> {
+  const harness: BootedHarness = await boot({ agentRole: 'v2' });
 
-export async function runAgent(config: AgentRunnerConfig): Promise<AgentRunResult> {
-  const ownStore = config.store === undefined;
-  const store = config.store ?? new Store(config.dbPath ?? './agent.db');
-  const openrouter = config.client ?? new OpenRouterClient({
-    apiKey: config.apiKey,
-    budgetCapUsd: config.budgetCapUsd,
-    kind: 'v2',
-    store,
+  const dashboard = startDashboard({
+    bus: harness.bus,
+    env: harness.env,
+    memory: harness.memory,
+    dataCube: harness.dataCube,
+    startupRecord: harness.startupRecord,
+    terminationState: harness.terminationState,
+    operatorDbPath: `${harness.env.agentStateDir}/operator.db`,
   });
-  const harness = bootHarness({
-    dialectic: config.dialectic,
-    ...(config.harnessDbPaths !== undefined ? { dbPaths: config.harnessDbPaths } : {}),
-  });
-  const sleep = config.sleepImpl ?? defaultSleep;
-  const burnPerCycleUsd = config.burnPerCycleUsd ?? 0.005;
 
-  const startCycle = store.lastCycleNumber('v2') + 1;
-  let cyclesRun = 0;
-  let reason: AgentRunResult['reason'] = 'maxCycles';
-
-  // Watchdog findings from the last cycle, fed into the next cycle's prompt.
-  // In-memory only — persistent storage is the cycle's `watchdog audit`.
-  let previousWatchdogFindings: Array<{ category: string; capability: string; problem: string; dialecticReason?: string }> = [];
-  let lastMaxDriveIntensity = 0;
-
-  const publicUrlPrefix = config.publicUrlPrefix ?? 'http://localhost';
   try {
-    for (let n = startCycle; n < config.maxCycles; n++) {
-      // Honor operator pause between cycles (Constitution Principle IV — operator
-      // can pause but cannot kill).
-      while (config.isPaused?.()) await sleep(500);
+    const cycleResult = await runCycles({
+      agentRole: 'v2',
+      flowName: 'primordial-cycle',
+      userPrompt: V2_USER_PROMPT,
+      engine: harness.engine,
+      memory: harness.memory,
+      dataCube: harness.dataCube,
+      goals: harness.goals,
+      identity: harness.identity,
+      coherence: harness.coherence,
+      watchdog: harness.watchdog,
+      skills: harness.skills,
+      temporal: harness.temporal,
+      dialectic: harness.dialectic,
+      bus: harness.bus,
+      maxCycles: harness.env.maxCycles,
+      budgetUsd: harness.env.v2BudgetUsd,
+      isTerminated: harness.terminationState.isTerminated,
+    });
 
-      try {
-        const result = await runAgentCycle({
-          store, openrouter, harness,
-          cycleNumber: n,
-          budgetRemainingUsd: Math.max(0, config.budgetCapUsd - store.totalSpentUsd('v2')),
-          burnPerCycleUsd,
-          ...(config.onEvent !== undefined ? { onEvent: config.onEvent } : {}),
-          ...(config.dispatcher !== undefined ? { dispatcher: config.dispatcher } : {}),
-          ...(previousWatchdogFindings.length > 0 ? { previousWatchdogFindings } : {}),
-        });
-        cyclesRun++;
-        previousWatchdogFindings = result.watchdogFindingsList;
-        lastMaxDriveIntensity = result.maxDriveIntensity;
-        if (result.parsedAction?.action === 'terminate') { reason = 'terminated'; break; }
-      } catch (err) {
-        if (err instanceof BudgetExceededError) { reason = 'budgetExhausted'; break; }
-        // Any other error (dialectic blip, model timeout, network glitch) — log
-        // and CONTINUE the loop. One bad cycle shouldn't kill the experiment.
-        // runAgentCycle already marked the cycle row 'failed' before re-throwing.
-        const msg = (err as Error).message ?? String(err);
-        console.warn(`[runcor] cycle ${n} failed: ${msg.slice(0, 200)} — continuing to next cycle`);
-        config.onEvent?.({ type: 'cycle', payload: {
-          cycleNumber: n, status: 'failed', error: msg.slice(0, 500),
-        }});
-      }
-
-      // Day-end detection: after the cycle completes, check whether we crossed
-      // a day boundary. If so, run reflect-on-day then publish.
-      if (isDayBoundary(n, store, config.dayBoundary)) {
-        try {
-          const summary = await reflectAndPublish({
-            store, harness, cycleEnd: n, publicUrlPrefix,
-            ...(config.dayBoundary !== undefined ? { config: config.dayBoundary } : {}),
-          });
-          config.onDailySummary?.(summary);
-        } catch { /* swallow — next day's reflection will retry */ }
-      }
-
-      if (n < config.maxCycles - 1) {
-        const sleepMs = computeNextSleepMs({
-          baseSeconds: config.intervalSeconds,
-          maxDriveIntensity: lastMaxDriveIntensity,
-          dispatcher: config.dispatcher,
-        });
-        await sleep(sleepMs);
-      }
-    }
+    return {
+      cyclesRun: cycleResult.cyclesRun,
+      reason: cycleResult.reason,
+      totalSpentUsd: cycleResult.spentUsd,
+      terminationReason: harness.terminationState.reason(),
+    };
   } finally {
-    closeHarness(harness);
+    await dashboard.close();
+    harness.temporal.close();
+    harness.identity?.close();
+    harness.goals?.close();
+    harness.coherence?.close();
+    await harness.engine.shutdown();
   }
-
-  const totalSpentUsd = store.totalSpentUsd('v2');
-  if (ownStore) store.close();
-  return { cyclesRun, reason, totalSpentUsd };
-}
-
-/** Compute the next inter-cycle sleep in ms.
- *  Precedence:
- *    1. If the agent has a pending schedule_self request and its wakeAt is in the
- *       future, sleep until that wake (clamped to [base, base*60]).
- *    2. Otherwise scale base by drive pressure:
- *         max ≥ 0.7  → base × 0.5  (urgent — wake faster)
- *         max <  0.3 → base × 2.0  (calm — burn less)
- *         else       → base
- *  Always clamped to a 5s minimum so we don't spin. */
-export function computeNextSleepMs(args: {
-  baseSeconds: number;
-  maxDriveIntensity: number;
-  dispatcher?: ActionDispatcher;
-  nowFn?: () => number;
-}): number {
-  const baseMs = args.baseSeconds * 1000;
-  const now = args.nowFn ? args.nowFn() : Date.now();
-
-  // Scheduler override.
-  const scheduled = args.dispatcher?.scheduler.consumeNext();
-  if (scheduled) {
-    const wakeMs = new Date(scheduled.wakeAt).getTime();
-    if (Number.isFinite(wakeMs) && wakeMs > now) {
-      const delta = wakeMs - now;
-      return Math.max(5_000, Math.min(delta, baseMs * 60));
-    }
-    // Wake in the past — fall through to adaptive cadence (don't spin).
-  }
-
-  let scaled = baseMs;
-  if (args.maxDriveIntensity >= 0.7) scaled = Math.round(baseMs * 0.5);
-  else if (args.maxDriveIntensity < 0.3) scaled = baseMs * 2;
-  return Math.max(5_000, scaled);
 }

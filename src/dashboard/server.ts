@@ -1,251 +1,425 @@
-// Dashboard HTTP server — Node built-in http; no extra deps.
+// V2 dashboard HTTP+SSE server (T079) — Node built-in http; no Express, no Hono.
 //
-// Exposes JSON state panels, an SSE transcript stream, the public blog,
-// the agent-blind scores endpoint, operator pause/resume/note, and a single
-// frontend page that consumes all of the above.
+// Routes are registered as a flat lookup table. Auth (bearer) and agent-egress filters wrap
+// individual handlers per `contracts/dashboard-api.md`. SSE transcript stream consumes from
+// the EventBus (src/dashboard/event-bus.ts).
+//
+// The server is started by agent/index.ts after boot completes; control/index.ts does NOT
+// start its own server (control is observed through V2's dashboard via `?role=control`
+// query parameters and the engine telemetry from the control process is forwarded into the
+// V2 EventBus by ... actually no, control is a separate process. For V2-002 v0.1, V2 and
+// control each run their own dashboard or only V2 hosts the dashboard. Operator can run
+// `npm start dashboard` standalone if they want a query-only view.
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
-import type { KindContext, DashboardContext } from './types.js';
-import {
-  memoryPanel, identityPanel, goalsPanel, drivesPanel,
-  watchdogPanel, coherencePanel, summariesPanel, overviewPanel,
-} from './routes/panels.js';
-import { recentTranscript, attachSseStream, TranscriptBus } from './routes/transcript.js';
-import { blogJson, blogSinglePostJson, blogIndexHtml } from './routes/blog.js';
-import { scoresPayload } from './routes/scores.js';
-import { generateCycleSummary } from './routes/cycle_summary.js';
-import { handleOperatorRequest, createOperatorPauseHandle, type OperatorPauseHandle, type OperatorVerb } from './routes/operator.js';
+import type { EventBus } from './event-bus.js';
+import type { V2Env } from '../shared/env.js';
+import type { MemorySystem } from 'runcor-memory';
+import type { DataCube } from 'runcor-data';
+import type { StartupRecord } from '../boot/startup-record.js';
+import { OperatorStore, type OperatorActionKind } from './operator-store.js';
+import { requireBearerToken, extractBearerToken, type RequestHandler } from './auth.js';
+import { blockAgentEgress } from './agent-egress.js';
 
-export interface DashboardServer {
+export interface DashboardArgs {
+  bus: EventBus;
+  env: V2Env;
+  memory: MemorySystem;
+  dataCube: DataCube;
+  startupRecord: StartupRecord;
+  terminationState: { isTerminated(): boolean; reason(): string | null };
+  operatorDbPath: string;
+  /** Optional control-process accessors (when V2 is co-located with the control process). */
+  controlMemory?: MemorySystem;
+  controlDataCube?: DataCube;
+}
+
+export interface DashboardHandle {
   server: Server;
-  bus: TranscriptBus;
-  pauseHandle: OperatorPauseHandle;
-  listen(port: number, host: string): Promise<void>;
+  port: number;
   close(): Promise<void>;
 }
 
-// Frontend assets live at <repo>/src/dashboard/frontend in source AND in the
-// runtime image (single-stage Dockerfile keeps src/ at /workspace/.../src/).
-// When this file is compiled, it lives at dist/dashboard/server.js — up TWO
-// dirs to escape dist/, then into src/dashboard/frontend/.
-const FRONTEND_DIR = path.dirname(fileURLToPath(import.meta.url)).includes(`${path.sep}dist${path.sep}`)
-  ? path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'src', 'dashboard', 'frontend')
-  : path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'frontend');
-
-export function createDashboardServer(ctx: DashboardContext): DashboardServer {
-  const bus = new TranscriptBus();
-  const pauseHandle = createOperatorPauseHandle();
-
-  const server = createServer((req, res) => handleRequest(req, res, ctx, bus, pauseHandle).catch((err) => {
-    res.statusCode = 500;
-    res.end(JSON.stringify({ error: (err as Error).message }));
-  }));
-
-  return {
-    server,
-    bus,
-    pauseHandle,
-    listen(port, host) {
-      return new Promise((resolve, reject) => {
-        server.once('error', reject);
-        server.listen(port, host, () => resolve());
-      });
-    },
-    close() {
-      return new Promise((resolve) => {
-        server.close(() => resolve());
-      });
-    },
-  };
-}
-
-async function handleRequest(
-  req: IncomingMessage,
-  res: ServerResponse,
-  ctx: DashboardContext,
-  bus: TranscriptBus,
-  pauseHandle: OperatorPauseHandle,
-): Promise<void> {
-  const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
-  const pathname = url.pathname.replace(/\/$/, '') || '/';
-  const cycleParam = parseInt(url.searchParams.get('cycle') ?? '0', 10) || 0;
-
-  // Helper to choose v2 vs control context.
-  const pickKindCtx = (kind: 'v2' | 'control'): KindContext | undefined =>
-    kind === 'v2' ? ctx.v2 : ctx.control;
-
-  // ── SSE: live transcript ──
-  if (pathname === '/transcript/live') {
-    const send = attachSseStream(res);
-    const unsub = bus.subscribe(send);
-    req.on('close', () => unsub());
-    return;
-  }
-
-  // ── JSON panels (per-kind) ──
-  const jsonRoutes: Array<[RegExp, (m: RegExpExecArray) => unknown]> = [
-    [/^\/(?:v2|control)\/overview$/, (m) => {
-      const kind = m[0].split('/')[1] as 'v2' | 'control';
-      const c = pickKindCtx(kind); return c ? overviewPanel(c, kind) : { error: 'kind not running' };
-    }],
-    [/^\/(?:v2|control)\/transcript$/, (m) => {
-      const kind = m[0].split('/')[1] as 'v2' | 'control';
-      const c = pickKindCtx(kind); if (!c) return { error: 'kind not running' };
-      const limitParam = parseInt(url.searchParams.get('limit') ?? '50', 10) || 50;
-      const beforeRaw = url.searchParams.get('before');
-      const beforeParam = beforeRaw && /^\d+$/.test(beforeRaw) ? parseInt(beforeRaw, 10) : undefined;
-      return recentTranscript(c, kind, Math.min(limitParam, 200), beforeParam);
-    }],
-    [/^\/(?:v2|control)\/memory$/, (m) => {
-      const c = pickKindCtx(m[0].split('/')[1] as 'v2' | 'control');
-      return c ? memoryPanel(c, cycleParam) : { error: 'kind not running' };
-    }],
-    [/^\/(?:v2|control)\/identity$/, (m) => {
-      const c = pickKindCtx(m[0].split('/')[1] as 'v2' | 'control');
-      return c ? identityPanel(c) : { error: 'kind not running' };
-    }],
-    [/^\/(?:v2|control)\/goals$/, (m) => {
-      const c = pickKindCtx(m[0].split('/')[1] as 'v2' | 'control');
-      return c ? goalsPanel(c, cycleParam) : { error: 'kind not running' };
-    }],
-    [/^\/(?:v2|control)\/drives$/, (m) => {
-      const c = pickKindCtx(m[0].split('/')[1] as 'v2' | 'control');
-      return c ? drivesPanel(c, cycleParam) : { error: 'kind not running' };
-    }],
-    [/^\/(?:v2|control)\/watchdog$/, (m) => {
-      const c = pickKindCtx(m[0].split('/')[1] as 'v2' | 'control');
-      return c ? watchdogPanel(c) : { error: 'kind not running' };
-    }],
-    [/^\/(?:v2|control)\/coherence$/, (m) => {
-      const c = pickKindCtx(m[0].split('/')[1] as 'v2' | 'control');
-      return c ? coherencePanel(c) : { error: 'kind not running' };
-    }],
-    [/^\/(?:v2|control)\/summaries$/, (m) => {
-      const kind = m[0].split('/')[1] as 'v2' | 'control';
-      const c = pickKindCtx(kind); return c ? summariesPanel(c, kind) : { error: 'kind not running' };
-    }],
-  ];
-
-  for (const [re, handler] of jsonRoutes) {
-    const m = re.exec(pathname);
-    if (m) return sendJson(res, handler(m));
-  }
-
-  // ── Cycle summary (cheap-model summarization of last 5 cycles, cached 60s) ──
-  const summaryMatch = /^\/(v2|control)\/cycle-summary$/.exec(pathname);
-  if (summaryMatch) {
-    const kind = summaryMatch[1] as 'v2' | 'control';
-    const c = pickKindCtx(kind);
-    if (!c) return sendJson(res, { error: 'kind not running' });
-    if (!ctx.summarizer) return sendJson(res, { error: 'summarizer not configured' });
-    const out = await generateCycleSummary(c, kind, ctx.summarizer, { lastN: 5 });
-    return sendJson(res, out);
-  }
-
-  // ── Hypotheses + their latest evaluations ──
-  if (pathname === '/hypotheses') {
-    const hypotheses = ctx.v2.store.allHypotheses();
-    const latest = ctx.v2.store.latestEvaluations();
-    const byHyp = new Map(latest.map((e) => [e.hypothesisId, e]));
-    return sendJson(res, hypotheses.map((h) => ({
-      ...h,
-      latest: byHyp.get(h.id) ?? null,
-    })));
-  }
-
-  // ── Blog (HTML public + JSON API) ──
-  if (pathname === '/blog' || pathname === '/blog/') {
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-    res.end(blogIndexHtml(ctx.v2, ctx.publicUrlPrefix));
-    return;
-  }
-  let m: RegExpExecArray | null;
-  if ((m = /^\/blog\/(v2|control)\/day-(\d+)$/.exec(pathname))) {
-    const kind = m[1] as 'v2' | 'control';
-    const day = parseInt(m[2]!, 10);
-    const c = pickKindCtx(kind);
-    return sendJson(res, c ? blogSinglePostJson(c, kind, day) : { error: 'kind not running' });
-  }
-  if ((m = /^\/blog\/(v2|control)$/.exec(pathname))) {
-    const kind = m[1] as 'v2' | 'control';
-    const c = pickKindCtx(kind);
-    return sendJson(res, c ? blogJson(c, kind) : { error: 'kind not running' });
-  }
-
-  // ── Scores — PUBLIC (Constitution Principle III: transparency is the contract).
-  // Auth was previously required as defense-in-depth for agent-blindness; in
-  // practice the agent has no code path that fetches /scores, so the auth was
-  // overreach. The agent stays blind because no part of its prompt or tooling
-  // mentions /scores — not because the endpoint rejects it.
-  if (pathname === '/scores') {
-    return sendJson(res, scoresPayload(ctx.v2, ctx.control));
-  }
-
-  // ── Operator (POST /operator/{verb}) ──
-  if (pathname.startsWith('/operator/') && req.method === 'POST') {
-    const verb = pathname.slice('/operator/'.length) as OperatorVerb;
-    const body = await readBody(req);
-    let text: string | undefined;
-    try {
-      const parsed = body.length > 0 ? (JSON.parse(body) as { text?: unknown }) : {};
-      if (typeof parsed.text === 'string') text = parsed.text;
-    } catch { /* fall through */ }
-    const result = handleOperatorRequest(
-      {
-        authHeader: typeof req.headers['authorization'] === 'string' ? (req.headers['authorization'] as string) : undefined,
-        expectedToken: ctx.operatorAuthToken,
-        verb,
-        ...(text !== undefined ? { text } : {}),
-      },
-      ctx.v2,
-      pauseHandle,
-    );
-    return sendJson(res, result.body, result.status);
-  }
-
-  // ── Frontend (single-page) ──
-  if (pathname === '/' || pathname === '/index.html') {
-    return serveStatic(res, path.join(FRONTEND_DIR, 'index.html'), 'text/html; charset=utf-8');
-  }
-  if (pathname === '/app.js') {
-    return serveStatic(res, path.join(FRONTEND_DIR, 'app.js'), 'application/javascript');
-  }
-  if (pathname === '/style.css') {
-    return serveStatic(res, path.join(FRONTEND_DIR, 'style.css'), 'text/css');
-  }
-
-  // 404
-  sendJson(res, { error: 'not found', path: pathname }, 404);
-}
-
-function sendJson(res: ServerResponse, body: unknown, status = 200): void {
-  res.writeHead(status, {
-    'Content-Type': 'application/json',
-    'Cache-Control': 'no-store',
-  });
+function jsonResponse(res: ServerResponse, status: number, body: unknown): void {
+  res.statusCode = status;
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
   res.end(JSON.stringify(body));
 }
 
-function serveStatic(res: ServerResponse, filePath: string, contentType: string): void {
-  try {
-    const buf = readFileSync(filePath);
-    res.writeHead(200, { 'Content-Type': contentType, 'Cache-Control': 'no-store' });
-    res.end(buf);
-  } catch {
-    res.writeHead(404);
-    res.end('not found');
-  }
+function notFound(res: ServerResponse): void {
+  jsonResponse(res, 404, { error: 'Not found', code: 'not_found' });
 }
 
-async function readBody(req: IncomingMessage): Promise<string> {
-  const chunks: Buffer[] = [];
-  return new Promise((resolve, reject) => {
-    req.on('data', (c: Buffer) => chunks.push(c));
-    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));
+function notImplemented(res: ServerResponse, route: string): void {
+  jsonResponse(res, 501, { error: `${route} not implemented yet`, code: 'not_implemented' });
+}
+
+function paramOf(url: URL, key: string): string | null {
+  const v = url.searchParams.get(key);
+  return v && v.length > 0 ? v : null;
+}
+
+function readJsonBody<T = unknown>(req: IncomingMessage, max = 4096): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    let total = 0;
+    const chunks: Buffer[] = [];
+    req.on('data', (chunk: Buffer) => {
+      total += chunk.length;
+      if (total > max) {
+        reject(new Error('body_too_large'));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('end', () => {
+      const text = Buffer.concat(chunks).toString('utf8') || '{}';
+      try {
+        resolve(JSON.parse(text) as T);
+      } catch {
+        reject(new Error('invalid_json'));
+      }
+    });
     req.on('error', reject);
   });
+}
+
+export function startDashboard(args: DashboardArgs): DashboardHandle {
+  const operatorStore = new OperatorStore(args.operatorDbPath);
+
+  const sseClients = new Map<number, ServerResponse>();
+  let sseId = 0;
+  // Forward bus events to all SSE clients.
+  const forward = (event: string) => (data: Record<string, unknown>) => {
+    for (const res of sseClients.values()) {
+      try {
+        const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+        res.write(payload);
+      } catch {
+        // Client disconnected; will be cleaned up on next iteration.
+      }
+    }
+  };
+  const eventNames = [
+    'cycle_record',
+    'prompt_assembled',
+    'discernment',
+    'discernment_flagged',
+    'flag_burst_warning',
+    'cost_request',
+    'execution_state_change',
+    'execution_complete',
+    'adapter_tool_call',
+    'adapter_connected',
+    'adapter_disconnected',
+    'provider_health_change',
+    'next_wake_scheduled',
+    'day_boundary',
+    'startup_record',
+    'harness_engaged',
+    'harness_disengaged',
+  ];
+  const forwarders: Array<{ event: string; fn: (data: Record<string, unknown>) => void }> = [];
+  for (const ev of eventNames) {
+    const fn = forward(ev);
+    forwarders.push({ event: ev, fn });
+    args.bus.on(ev, fn);
+  }
+
+  const handleHealthz: RequestHandler = (_req, res) => {
+    jsonResponse(res, 200, {
+      ok: true,
+      agentRole: args.startupRecord.agentRole,
+      bootedAt: args.startupRecord.bootedAt,
+      terminated: args.terminationState.isTerminated(),
+    });
+  };
+
+  const handleStartupRecord: RequestHandler = (_req, res) => {
+    jsonResponse(res, 200, args.startupRecord);
+  };
+
+  const handleTranscriptSse: RequestHandler = (req, res) => {
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.write('event: ping\ndata: {}\n\n');
+
+    const id = ++sseId;
+    sseClients.set(id, res);
+
+    // Backfill via Last-Event-ID header.
+    const lastEventId = req.headers['last-event-id'];
+    if (typeof lastEventId === 'string') {
+      const after = parseInt(lastEventId, 10);
+      if (Number.isFinite(after)) {
+        const buffered = args.bus.snapshotAfter(after);
+        for (const e of buffered) {
+          res.write(`id: ${e.id}\nevent: ${e.event}\ndata: ${JSON.stringify(e.data)}\n\n`);
+        }
+      }
+    }
+
+    const keepalive = setInterval(() => {
+      try {
+        res.write('event: ping\ndata: {}\n\n');
+      } catch {
+        // ignore
+      }
+    }, 30_000);
+
+    req.on('close', () => {
+      sseClients.delete(id);
+      clearInterval(keepalive);
+    });
+  };
+
+  const handleTranscriptHistory: RequestHandler = (req, res) => {
+    const url = new URL(req.url ?? '', 'http://x');
+    const after = parseInt(paramOf(url, 'after') ?? '0', 10);
+    const limit = Math.min(500, Math.max(1, parseInt(paramOf(url, 'limit') ?? '100', 10)));
+    const events = args.bus.snapshotAfter(Number.isFinite(after) ? after : 0).slice(0, limit);
+    jsonResponse(res, 200, { events });
+  };
+
+  const handleMemory: RequestHandler = (req, res) => {
+    const url = new URL(req.url ?? '', 'http://x');
+    const role = paramOf(url, 'role') ?? 'v2';
+    const mem = role === 'control' && args.controlMemory ? args.controlMemory : args.memory;
+    const limit = Math.min(200, Math.max(1, parseInt(paramOf(url, 'limit') ?? '50', 10)));
+    const all = mem.getAll();
+    const nodes = all
+      .sort((a, b) => b.lastAccessed - a.lastAccessed)
+      .slice(0, limit)
+      .map((n) => ({
+        id: n.id,
+        content: n.content.slice(0, 200),
+        tags: n.tags ?? [],
+        M: n.M,
+        R: n.R,
+        f: n.f,
+        t: n.t,
+        D: n.D,
+        cube: n.cube,
+        createdAtCycle: n.lastAccessed, // best-effort with current schema
+        lastAccessedCycle: n.lastAccessed,
+      }));
+    const stats = {
+      shortCubeCount: all.filter((n) => n.cube === 'short').length,
+      longCubeCount: all.filter((n) => n.cube === 'long').length,
+      retiredCount: 0,
+    };
+    const plan = mem.getPlan();
+    jsonResponse(res, 200, {
+      stats,
+      nodes,
+      edges: [],
+      plan,
+      cursor: nodes.length > 0 ? nodes[nodes.length - 1]!.id : null,
+      hasMore: all.length > limit,
+    });
+  };
+
+  const handleMemoryNode: RequestHandler = (req, res) => {
+    const url = new URL(req.url ?? '', 'http://x');
+    const segments = url.pathname.split('/');
+    const id = segments[segments.length - 1];
+    if (!id) return notFound(res);
+    const node = args.memory.getNode(id);
+    if (!node) return notFound(res);
+    jsonResponse(res, 200, { node });
+  };
+
+  const handleData: RequestHandler = (req, res) => {
+    const url = new URL(req.url ?? '', 'http://x');
+    const role = paramOf(url, 'role') ?? 'v2';
+    const cube = role === 'control' && args.controlDataCube ? args.controlDataCube : args.dataCube;
+    const stats = cube.getStats();
+    const openConflicts = cube.listConflicts('open');
+    jsonResponse(res, 200, {
+      stats,
+      entities: [],
+      openConflicts,
+      cursor: null,
+      hasMore: false,
+    });
+  };
+
+  const handleBlog: RequestHandler = (_req, res) => {
+    const all = args.memory.getAll();
+    const summaries = all
+      .filter((n) => (n.tags ?? []).includes('daily_summary'))
+      .sort((a, b) => b.lastAccessed - a.lastAccessed)
+      .map((n) => ({
+        nodeId: n.id,
+        content: n.content,
+        tags: n.tags ?? [],
+        M: n.M,
+        createdAtCycle: n.lastAccessed,
+      }));
+    jsonResponse(res, 200, { summaries });
+  };
+
+  const handleOperatorPause: RequestHandler = async (req, res) => {
+    const body = (await readJsonBody<{ scope?: 'v2' | 'control' | 'both' }>(req).catch(() => ({} as { scope?: 'v2' | 'control' | 'both' })));
+    const scope = body.scope ?? 'v2';
+    const token = extractBearerToken(req) ?? '';
+    operatorStore.append({
+      kind: 'pause',
+      payload: { scope },
+      authenticatedAs: OperatorStore.hashToken(token),
+    });
+    jsonResponse(res, 200, { paused: true, scope });
+  };
+
+  const handleOperatorResume: RequestHandler = async (req, res) => {
+    const body = (await readJsonBody<{ scope?: 'v2' | 'control' | 'both' }>(req).catch(() => ({} as { scope?: 'v2' | 'control' | 'both' })));
+    const scope = body.scope ?? 'v2';
+    const token = extractBearerToken(req) ?? '';
+    operatorStore.append({
+      kind: 'resume',
+      payload: { scope },
+      authenticatedAs: OperatorStore.hashToken(token),
+    });
+    jsonResponse(res, 200, { paused: false, scope });
+  };
+
+  const handleOperatorNote: RequestHandler = async (req, res) => {
+    const body = (await readJsonBody<{ note?: string }>(req).catch(() => ({} as { note?: string })));
+    if (typeof body.note !== 'string' || body.note.length === 0 || body.note.length > 2000) {
+      return jsonResponse(res, 400, { error: 'note required (1..2000 chars)', code: 'bad_request' });
+    }
+    const token = extractBearerToken(req) ?? '';
+    const action = operatorStore.append({
+      kind: 'infrastructure_note' as OperatorActionKind,
+      payload: { note: body.note },
+      authenticatedAs: OperatorStore.hashToken(token),
+    });
+    jsonResponse(res, 200, { id: action.id, ts: action.ts });
+  };
+
+  const handleOperatorLog: RequestHandler = (req, res) => {
+    const url = new URL(req.url ?? '', 'http://x');
+    const limit = Math.min(500, Math.max(1, parseInt(paramOf(url, 'limit') ?? '100', 10)));
+    jsonResponse(res, 200, { actions: operatorStore.list({ limit }) });
+  };
+
+  const handleScores: RequestHandler = (_req, res) => {
+    // Stub for v0.1 — full /scores comes when the rater is ported (T140 / T144).
+    jsonResponse(res, 200, { v2: [], control: [] });
+  };
+
+  const handleFrontend = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+    const reqUrl = req.url ?? '/';
+    const url = new URL(reqUrl, 'http://x');
+    const requested = url.pathname === '/' || url.pathname === '/dashboard' ? '/index.html' : url.pathname;
+    const filePath = path.resolve(`./src/dashboard/frontend${requested}`);
+    if (!filePath.startsWith(path.resolve('./src/dashboard/frontend'))) {
+      return notFound(res);
+    }
+    try {
+      const content = await readFile(filePath);
+      const ext = path.extname(requested);
+      const contentType =
+        ext === '.html' ? 'text/html; charset=utf-8' :
+        ext === '.js' ? 'application/javascript; charset=utf-8' :
+        ext === '.css' ? 'text/css; charset=utf-8' :
+        'application/octet-stream';
+      res.statusCode = 200;
+      res.setHeader('Content-Type', contentType);
+      res.end(content);
+    } catch {
+      notFound(res);
+    }
+  };
+
+  const operatorToken = args.env.operatorAuthToken;
+
+  const server = createServer(async (req, res) => {
+    try {
+      const reqUrl = req.url ?? '';
+      const method = req.method ?? 'GET';
+      const url = new URL(reqUrl, 'http://x');
+      const pathname = url.pathname;
+
+      if (pathname === '/healthz' && method === 'GET') return handleHealthz(req, res);
+      if (pathname === '/startup-record' && method === 'GET') return handleStartupRecord(req, res);
+      if (pathname === '/transcript' && method === 'GET') {
+        const accept = req.headers.accept ?? '';
+        if (accept.includes('text/event-stream')) return handleTranscriptSse(req, res);
+        return handleTranscriptHistory(req, res);
+      }
+      if (pathname === '/memory' && method === 'GET') return handleMemory(req, res);
+      if (pathname.startsWith('/memory/node/') && method === 'GET') return handleMemoryNode(req, res);
+      if (pathname === '/data' && method === 'GET') return handleData(req, res);
+      if (pathname === '/blog' && method === 'GET') return handleBlog(req, res);
+      if (pathname === '/summaries' && method === 'GET') return handleBlog(req, res);
+      if (pathname === '/scores' && method === 'GET') {
+        return blockAgentEgress(requireBearerToken(operatorToken, handleScores))(req, res);
+      }
+      if (pathname === '/operator/pause' && method === 'POST') {
+        return requireBearerToken(operatorToken, handleOperatorPause)(req, res);
+      }
+      if (pathname === '/operator/resume' && method === 'POST') {
+        return requireBearerToken(operatorToken, handleOperatorResume)(req, res);
+      }
+      if (pathname === '/operator/note' && method === 'POST') {
+        return requireBearerToken(operatorToken, handleOperatorNote)(req, res);
+      }
+      if (pathname === '/operator/log' && method === 'GET') return handleOperatorLog(req, res);
+
+      // Identity / goals / drives / watchdog / coherence — thin reads for v0.1.
+      if (pathname === '/identity' && method === 'GET') {
+        const all = args.memory.getAll().filter((n) => (n.tags ?? []).includes('identity_snapshot'));
+        return jsonResponse(res, 200, { snapshots: all.map((n) => ({ content: n.content, tags: n.tags, M: n.M })) });
+      }
+      if (pathname === '/goals' && method === 'GET') {
+        return jsonResponse(res, 200, { plan: args.memory.getPlan() });
+      }
+      if (pathname === '/drives' && method === 'GET') {
+        return notImplemented(res, '/drives');
+      }
+      if (pathname === '/watchdog' && method === 'GET') {
+        const all = args.memory.getAll().filter((n) => (n.tags ?? []).includes('watchdog_finding'));
+        return jsonResponse(res, 200, { findings: all });
+      }
+      if (pathname === '/coherence' && method === 'GET') {
+        return notImplemented(res, '/coherence');
+      }
+      if (pathname === '/result' && method === 'GET') return notImplemented(res, '/result');
+      if (pathname === '/hypothesis' && method === 'GET') return notImplemented(res, '/hypothesis');
+      if (pathname === '/rater' && method === 'GET') return notImplemented(res, '/rater');
+
+      if (method === 'GET') {
+        return handleFrontend(req, res);
+      }
+      return notFound(res);
+    } catch (err) {
+      jsonResponse(res, 500, { error: err instanceof Error ? err.message : 'internal_error', code: 'internal_error' });
+    }
+  });
+
+  server.listen(args.env.dashboardPort, args.env.dashboardHost);
+
+  return {
+    server,
+    port: args.env.dashboardPort,
+    async close(): Promise<void> {
+      for (const f of forwarders) args.bus.off(f.event, f.fn);
+      for (const res of sseClients.values()) {
+        try {
+          res.end();
+        } catch {
+          // ignore
+        }
+      }
+      sseClients.clear();
+      operatorStore.close();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    },
+  };
 }
