@@ -20,7 +20,7 @@ const skipIfNoKey = HAS_OPENAI ? test : test.skip;
 // or may not invoke it depending on whether an R++ classifier is wired. Provide a minimal model.
 const stubModel = {
   async complete(_req: { prompt?: string; systemPrompt?: string; responseFormat?: 'text' | 'json' }): Promise<{ text: string }> {
-    return { text: 'stub-classification' };
+    return { text: '{"classification":"normal","columns":[]}' };
   },
 };
 

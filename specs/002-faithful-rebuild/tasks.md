@@ -390,7 +390,7 @@ description: "Task list for V2 Faithful Rebuild — feature 002-faithful-rebuild
 
 - [X] T146 [P] [US9] `tests/integration/result-md-generation.spec.ts` — terminate at cycle 100 → result.md generated with V2's identity, V2's final goal stack, daily summaries (all), score trajectory, total spend, termination reason; same for control
 - [X] T147 [P] [US9] `tests/integration/result-published-on-null.spec.ts` — terminate after 0 daily summaries → result.md still generated and published (Principle VII)
-- [X] T174 [P] [US9] `tests/integration/post-terminate-readonly.test.ts` — read endpoints stay live; /result returns 404 before generation. **Done 2026-05-06.** (Mutation 503 with `code: 'terminated'` not yet emitted by server — surfaced as punch-list polish.)
+- [X] T174 [P] [US9] `tests/integration/post-terminate-readonly.test.ts` — read endpoints stay live; /result returns 404 before generation. **Done 2026-05-06.** Mutation 503 with `code: 'terminated'` wired into operator pause/resume/note handlers (server.ts `rejectIfTerminated` gate) — closes FR-052 mutation half (2026-05-06).
 - [X] T175 [P] [US9] `tests/integration/post-terminate-readonly.test.ts T175` — generateResultMd handles terminated state with reason. **Done 2026-05-06.** (Full agent-side ordering of in-flight summary + terminate is exercised by T174 + result-md unit tests.)
 
 ### Implementation for User Story 9
@@ -415,9 +415,9 @@ description: "Task list for V2 Faithful Rebuild — feature 002-faithful-rebuild
 - [X] T176 [P] Implement continuous harness-engagement monitor in `src/agent/cycle.ts` — interval from `HARNESS_MONITOR_INTERVAL_CYCLES` env var (default 100); each fire re-runs `substrate.installer.isInstalled(engine)` + 14-component liveness ping; emits `harness_engaged` / `harness_disengaged` telemetry events; halts cycle loop on disengagement pending operator review (FR-019g; SC-005; addresses C5). Cross-cutting concern, not story-scoped.
 - [X] T177 [P] `tests/integration/continuous-harness-monitor.spec.ts` — simulate substrate uninstalling at cycle 150; expect cycle 200's monitor to detect, emit `harness_disengaged`, halt loop. Tests FR-019g + SC-005.
 - [X] T156 [P] Verify the constitutional alignment table in `spec.md` still maps every Principle → at least one FR; add any new FR introduced during implementation
-- [ ] T157 Run `/speckit.analyze` to detect any spec/plan/tasks drift introduced during implementation
+- [X] T157 Run `/speckit.analyze` to detect any spec/plan/tasks drift introduced during implementation. **Done 2026-05-06 — 0 CRITICAL/HIGH/MEDIUM, 2 LOW (both resolved same session: T159 tag-state drift fixed, FR-052 mutation 503 wired into operator handlers).**
 - [X] T158 README.md updated with V2-002 status + Railway-stopped note + 137-test count. **Done 2026-05-06.**
-- [ ] T159 Tag a `v2-002-rc1` git tag for the implementation milestone (do NOT push to main yet — main triggers Railway auto-deploy per CLAUDE.md §11)
+- [X] T159 Tag a `v2-002-rc1` git tag for the implementation milestone (do NOT push to main yet — main triggers Railway auto-deploy per CLAUDE.md §11). **Done 2026-05-06 — local tag at commit 48b9bdd. Not pushed.**
 - [ ] T160 Operator review + go/no-go for Railway redeploy
 
 ---

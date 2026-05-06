@@ -267,7 +267,18 @@ export function startDashboard(args: DashboardArgs): DashboardHandle {
     jsonResponse(res, 200, { summaries });
   };
 
+  const rejectIfTerminated = (res: Parameters<RequestHandler>[1]): boolean => {
+    if (!args.terminationState.isTerminated()) return false;
+    jsonResponse(res, 503, {
+      error: 'agent terminated; mutations are disabled',
+      code: 'terminated',
+      reason: args.terminationState.reason(),
+    });
+    return true;
+  };
+
   const handleOperatorPause: RequestHandler = async (req, res) => {
+    if (rejectIfTerminated(res)) return;
     const body = (await readJsonBody<{ scope?: 'v2' | 'control' | 'both' }>(req).catch(() => ({} as { scope?: 'v2' | 'control' | 'both' })));
     const scope = body.scope ?? 'v2';
     const token = extractBearerToken(req) ?? '';
@@ -280,6 +291,7 @@ export function startDashboard(args: DashboardArgs): DashboardHandle {
   };
 
   const handleOperatorResume: RequestHandler = async (req, res) => {
+    if (rejectIfTerminated(res)) return;
     const body = (await readJsonBody<{ scope?: 'v2' | 'control' | 'both' }>(req).catch(() => ({} as { scope?: 'v2' | 'control' | 'both' })));
     const scope = body.scope ?? 'v2';
     const token = extractBearerToken(req) ?? '';
@@ -292,6 +304,7 @@ export function startDashboard(args: DashboardArgs): DashboardHandle {
   };
 
   const handleOperatorNote: RequestHandler = async (req, res) => {
+    if (rejectIfTerminated(res)) return;
     const body = (await readJsonBody<{ note?: string }>(req).catch(() => ({} as { note?: string })));
     if (typeof body.note !== 'string' || body.note.length === 0 || body.note.length > 2000) {
       return jsonResponse(res, 400, { error: 'note required (1..2000 chars)', code: 'bad_request' });

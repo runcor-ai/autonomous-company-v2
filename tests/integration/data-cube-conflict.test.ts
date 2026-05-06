@@ -88,7 +88,7 @@ describe('T100: data-cube conflict persistence (FR-082)', () => {
       });
       const slice = await cube.queryReality({ goal: 'understand safety', drive: 'curiosity' });
       expect(slice).toBeDefined();
-      expect(typeof slice.last_updated).toBe('string');
+      expect(Array.isArray(slice.entities)).toBe(true);
       // rendered text exists (V2RealityLayer reads it)
       expect(typeof slice.rendered).toBe('string');
     } finally {
