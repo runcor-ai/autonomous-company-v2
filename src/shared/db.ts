@@ -83,7 +83,89 @@ export class Store {
         text       TEXT,
         created_at TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS hypotheses (
+        id          TEXT PRIMARY KEY,
+        title       TEXT NOT NULL,
+        description TEXT NOT NULL,
+        created_at  TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS hypothesis_evaluations (
+        id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+        hypothesis_id            TEXT NOT NULL,
+        status                   TEXT NOT NULL,
+        confidence               REAL NOT NULL,
+        evidence                 TEXT NOT NULL,
+        reasoning                TEXT NOT NULL,
+        generic_llm_rebuttal     TEXT NOT NULL,
+        evaluator_model          TEXT NOT NULL,
+        evaluated_at_v2_cycle    INTEGER NOT NULL,
+        evaluated_at             TEXT NOT NULL,
+        FOREIGN KEY (hypothesis_id) REFERENCES hypotheses(id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_hyp_eval_h ON hypothesis_evaluations(hypothesis_id);
     `);
+  }
+
+  // ── Hypotheses ──
+
+  upsertHypothesis(id: string, title: string, description: string): void {
+    const existing = this.db.prepare(`SELECT id FROM hypotheses WHERE id = ?`).get(id);
+    if (existing) {
+      this.db.prepare(`UPDATE hypotheses SET title = ?, description = ? WHERE id = ?`).run(title, description, id);
+    } else {
+      this.db.prepare(
+        `INSERT INTO hypotheses (id, title, description, created_at) VALUES (?, ?, ?, ?)`,
+      ).run(id, title, description, new Date().toISOString());
+    }
+  }
+
+  allHypotheses(): Array<{ id: string; title: string; description: string; createdAt: string }> {
+    const rows = this.db.prepare(`SELECT id, title, description, created_at FROM hypotheses ORDER BY id`).all() as Array<{ id: string; title: string; description: string; created_at: string }>;
+    return rows.map((r) => ({ id: r.id, title: r.title, description: r.description, createdAt: r.created_at }));
+  }
+
+  recordEvaluation(input: {
+    hypothesisId: string; status: string; confidence: number;
+    evidence: string; reasoning: string; genericLlmRebuttal: string;
+    evaluatorModel: string; evaluatedAtV2Cycle: number;
+  }): number {
+    const info = this.db.prepare(`
+      INSERT INTO hypothesis_evaluations
+        (hypothesis_id, status, confidence, evidence, reasoning, generic_llm_rebuttal,
+         evaluator_model, evaluated_at_v2_cycle, evaluated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      input.hypothesisId, input.status, input.confidence,
+      input.evidence, input.reasoning, input.genericLlmRebuttal,
+      input.evaluatorModel, input.evaluatedAtV2Cycle, new Date().toISOString(),
+    );
+    return info.lastInsertRowid as number;
+  }
+
+  latestEvaluations(): Array<{
+    hypothesisId: string; status: string; confidence: number;
+    evidence: string; reasoning: string; genericLlmRebuttal: string;
+    evaluatorModel: string; evaluatedAtV2Cycle: number; evaluatedAt: string;
+  }> {
+    // Get the latest evaluation per hypothesis_id.
+    const rows = this.db.prepare(`
+      SELECT he.* FROM hypothesis_evaluations he
+      INNER JOIN (
+        SELECT hypothesis_id, MAX(id) AS max_id FROM hypothesis_evaluations GROUP BY hypothesis_id
+      ) latest ON he.id = latest.max_id
+    `).all() as Array<{
+      hypothesis_id: string; status: string; confidence: number;
+      evidence: string; reasoning: string; generic_llm_rebuttal: string;
+      evaluator_model: string; evaluated_at_v2_cycle: number; evaluated_at: string;
+    }>;
+    return rows.map((r) => ({
+      hypothesisId: r.hypothesis_id, status: r.status, confidence: r.confidence,
+      evidence: r.evidence, reasoning: r.reasoning, genericLlmRebuttal: r.generic_llm_rebuttal,
+      evaluatorModel: r.evaluator_model, evaluatedAtV2Cycle: r.evaluated_at_v2_cycle,
+      evaluatedAt: r.evaluated_at,
+    }));
   }
 
   // ── Cycles ──

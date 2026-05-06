@@ -113,6 +113,39 @@ async function refreshScores() {
   }
 }
 
+// ── hypotheses (emergence-claim evaluations) ──
+async function refreshHypotheses() {
+  const data = await fetchJson('/hypotheses');
+  if (!Array.isArray(data)) {
+    $('hypotheses').innerHTML = `<div class="muted">${data?.error ?? 'no data'}</div>`;
+    return;
+  }
+  const cards = data.map((h) => {
+    const e = h.latest;
+    const status = e?.status ?? 'pending';
+    const conf = e?.confidence != null ? `${(e.confidence * 100).toFixed(0)}%` : '—';
+    const at = e?.evaluatedAt ? `cycle ${e.evaluatedAtV2Cycle} · ${e.evaluatedAt.slice(11, 19)} UTC` : 'not yet evaluated';
+    const statusClass = `hyp-status-${status.replace(/[^a-z-]/g, '')}`;
+    const description = `<details><summary class="hyp-desc-summary">definition</summary><div class="hyp-desc">${escapeHtml(h.description)}</div></details>`;
+    const evalBody = e
+      ? `<div class="hyp-reasoning">${escapeHtml(e.reasoning)}</div>
+         <div class="hyp-evidence"><strong>evidence:</strong> ${escapeHtml(e.evidence)}</div>
+         <div class="hyp-rebuttal"><strong>generic-LLM rebuttal:</strong> ${escapeHtml(e.genericLlmRebuttal)}</div>`
+      : '<div class="muted">no evaluation yet — first matcher tick after V2 reaches cycle 5 + interval (30 min default)</div>';
+    return `<article class="hyp-card">
+      <header>
+        <span class="hyp-status-badge ${statusClass}">${status}</span>
+        <span class="hyp-conf">${conf}</span>
+        <span class="hyp-title">${escapeHtml(h.title)}</span>
+        <span class="hyp-at muted">${at}</span>
+      </header>
+      ${description}
+      ${evalBody}
+    </article>`;
+  }).join('');
+  $('hypotheses').innerHTML = cards;
+}
+
 // ── cycle summaries (cheap-model paraphrase of last 5 cycles) ──
 async function refreshSummaries() {
   const [v2, ctrl] = await Promise.all([
@@ -272,9 +305,11 @@ function startSse() {
   await refreshOnce();
   await refreshScores();
   await refreshSummaries();
+  await refreshHypotheses();
   await reloadTranscript();
   startSse();
   setInterval(refreshOnce, POLL_MS);
   setInterval(refreshScores, POLL_MS);          // bar + chart update with the rest
   setInterval(refreshSummaries, 30_000);        // summaries refresh every 30s (server caches 60s)
+  setInterval(refreshHypotheses, 60_000);       // hypotheses refresh every 60s (matcher ticks every 30 min)
 })();

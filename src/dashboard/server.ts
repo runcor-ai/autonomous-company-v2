@@ -142,6 +142,17 @@ async function handleRequest(
     return sendJson(res, out);
   }
 
+  // ── Hypotheses + their latest evaluations ──
+  if (pathname === '/hypotheses') {
+    const hypotheses = ctx.v2.store.allHypotheses();
+    const latest = ctx.v2.store.latestEvaluations();
+    const byHyp = new Map(latest.map((e) => [e.hypothesisId, e]));
+    return sendJson(res, hypotheses.map((h) => ({
+      ...h,
+      latest: byHyp.get(h.id) ?? null,
+    })));
+  }
+
   // ── Blog (HTML public + JSON API) ──
   if (pathname === '/blog' || pathname === '/blog/') {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });

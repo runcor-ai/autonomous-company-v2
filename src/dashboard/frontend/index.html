@@ -64,6 +64,12 @@
       <div id="current-score" class="muted"></div>
     </section>
 
+    <section class="hypothesis-section">
+      <h2>Emergence hypotheses</h2>
+      <p class="muted">Eight claims about emergent behavior the harness should produce. A reasoning model (qwen-2.5-72b) re-evaluates each one every 30 min against accumulated activity. Each evaluation includes a "could a generic LLM have produced this?" rebuttal — that's the discriminator between harness-emergence and ordinary LLM output.</p>
+      <div id="hypotheses" class="hypothesis-grid">loading…</div>
+    </section>
+
     <section class="summary-section">
       <h2>Recent activity — last 5 cycles, summarized</h2>
       <p class="muted">A cheap model (llama-3.1-8b) describes what each agent has been doing. Refreshes every 30s. Cached 60s server-side.</p>

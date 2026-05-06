@@ -11,6 +11,8 @@ import { createDashboardServer, type DashboardServer } from '../dashboard/server
 import type { DashboardContext } from '../dashboard/types.js';
 import { startRaterLoop, type RaterConfig } from '../rater/index.js';
 import type { callAnthropic } from '../rater/anthropic.js';
+import { startHypothesisLoop } from '../hypothesis/evaluator.js';
+import { SEED_HYPOTHESES } from '../hypothesis/seed.js';
 
 export interface ExperimentConfig {
   /** Single shared SQLite store for V2 + control + summaries + scores. */
@@ -55,6 +57,9 @@ export interface ExperimentConfig {
   /** Action dispatcher config — credentials for the agent's senses + outward actions.
    *  When omitted, the agent reasons but its action choices have no effect (Phase-5 behavior). */
   dispatcher?: Omit<DispatcherConfig, 'store' | 'publicUrlPrefix'>;
+
+  /** Hypothesis matcher config. When omitted, no evaluations run. */
+  hypothesisMatcher?: { model?: string; intervalMs?: number };
 }
 
 export interface ExperimentHandle {
@@ -162,6 +167,18 @@ export async function startExperiment(config: ExperimentConfig): Promise<Experim
   };
   const controlDone: Promise<void> = (async () => { await runControl(controlCfg); })();
 
+  // Hypothesis matcher — seed the 8 emergence hypotheses (idempotent upsert) +
+  // kick off the periodic evaluator loop using qwen-2.5-72b-instruct (or override).
+  for (const h of SEED_HYPOTHESES) store.upsertHypothesis(h.id, h.title, h.description);
+  const stopHypothesis = config.hypothesisMatcher !== undefined
+    ? startHypothesisLoop({
+        store,
+        apiKey: config.openrouterApiKey,
+        model: config.hypothesisMatcher.model ?? 'qwen/qwen-2.5-72b-instruct',
+        intervalMs: config.hypothesisMatcher.intervalMs ?? 30 * 60 * 1000,  // 30 min default
+      })
+    : () => {};
+
   return {
     dashboard,
     v2Done,
@@ -169,6 +186,7 @@ export async function startExperiment(config: ExperimentConfig): Promise<Experim
     stopRater,
     async shutdown() {
       stopRater();
+      stopHypothesis();
       await dashboard.close();
     },
   };

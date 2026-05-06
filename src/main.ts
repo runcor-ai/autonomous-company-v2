@@ -128,6 +128,12 @@ async function main(): Promise<void> {
     raterModel: optEnv('RATER_MODEL', 'anthropic/claude-3.5-sonnet')!,
     raterIntervalMs: intEnv('RATER_INTERVAL_MS', 60_000),
     raterCallImpl: callOpenRouterChat,
+    // Hypothesis matcher — qwen-2.5-72b-instruct via OpenRouter, evaluates the
+    // 8 emergence hypotheses every 30 min by default.
+    hypothesisMatcher: {
+      model: optEnv('HYPOTHESIS_MATCHER_MODEL', 'qwen/qwen-2.5-72b-instruct')!,
+      intervalMs: intEnv('HYPOTHESIS_MATCHER_INTERVAL_MS', 30 * 60 * 1000),
+    },
     operatorAuthToken: reqEnv('OPERATOR_AUTH_TOKEN'),
     publicUrlPrefix: optEnv('DASHBOARD_PUBLIC_URL', 'http://localhost:8080')!,
     dashboardHost: optEnv('DASHBOARD_HOST', '0.0.0.0')!,
