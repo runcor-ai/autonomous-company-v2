@@ -101,18 +101,18 @@ description: "Task list for V2 Faithful Rebuild — feature 002-faithful-rebuild
 
 **Purpose**: V2 project initialization and basic structure.
 
-- [ ] T041 Update `package.json` listing all 14 siblings as `file:../<name>` deps: runcor, runcor-substrate, runcor-memory, runcor-data, runcor-integration, runcor-dialectic, runcor-meta, runcor-watchdog, runcor-skills, runcor-drives, runcor-identity, runcor-goals, runcor-temporal, runcor-coherence + `@modelcontextprotocol/sdk`, `imapflow`, `nodemailer`, `dotenv`, `better-sqlite3`. Verify all 14 resolve via `npm ls`. (FR-011)
-- [ ] T042 [P] Confirm `tsconfig.json` is strict-mode ESM (matches 001 baseline)
-- [ ] T043 [P] Confirm `vitest.config.ts` is unchanged from 001 baseline
-- [ ] T044 [P] Create project skeleton dirs: `src/{boot,engine,mcp-local,agent,control,dashboard,rater,hypothesis,shared}` and `tests/{unit,integration,contract}`
-- [ ] T045 [P] Create `src/shared/lints/no-direct-provider.ts` — ESLint or grep-based lint guard preventing imports of `openrouter`/`@anthropic-ai/sdk`/`openai`/raw HTTPS to model-provider URLs outside the engine package (FR-010 enforcement). Wire into `npm run typecheck`.
-- [ ] T165 [P] Create `src/shared/lints/no-laws-literal.ts` — grep-based lint guard preventing literal `LAWS = [`, `const LAWS`, `"TASK:"` footers, or any cycle-prompt template strings in V2 source (FR-015 enforcement; addresses C4). Wire into `npm run typecheck` alongside T045's no-direct-provider lint. Both lints fail CI on hits.
-- [ ] T046 [P] Create `src/shared/env.ts` loading + validating required env vars (OPENROUTER_API_KEY, OPERATOR_AUTH_TOKEN, FIRECRAWL_API_KEY, RUNNER_EMAIL_*, GIT_PUSH_*, etc.). Boot fails with named-key error if any required key missing.
+- [X] T041 Update `package.json` listing all 14 siblings as `file:../<name>` deps: runcor, runcor-substrate, runcor-memory, runcor-data, runcor-integration, runcor-dialectic, runcor-meta, runcor-watchdog, runcor-skills, runcor-drives, runcor-identity, runcor-goals, runcor-temporal, runcor-coherence + `@modelcontextprotocol/sdk`, `imapflow`, `nodemailer`, `dotenv`, `better-sqlite3`. Verify all 14 resolve via `npm ls`. (FR-011)
+- [X] T042 [P] Confirm `tsconfig.json` is strict-mode ESM (matches 001 baseline)
+- [X] T043 [P] Confirm `vitest.config.ts` is unchanged from 001 baseline
+- [X] T044 [P] Create project skeleton dirs: `src/{boot,engine,mcp-local,agent,control,dashboard,rater,hypothesis,shared}` and `tests/{unit,integration,contract}`
+- [X] T045 [P] Create `src/shared/lints/no-direct-provider.ts` — ESLint or grep-based lint guard preventing imports of `openrouter`/`@anthropic-ai/sdk`/`openai`/raw HTTPS to model-provider URLs outside the engine package (FR-010 enforcement). Wire into `npm run typecheck`.
+- [X] T165 [P] Create `src/shared/lints/no-laws-literal.ts` — grep-based lint guard preventing literal `LAWS = [`, `const LAWS`, `"TASK:"` footers, or any cycle-prompt template strings in V2 source (FR-015 enforcement; addresses C4). Wire into `npm run typecheck` alongside T045's no-direct-provider lint. Both lints fail CI on hits.
+- [X] T046 [P] Create `src/shared/env.ts` loading + validating required env vars (OPENROUTER_API_KEY, OPERATOR_AUTH_TOKEN, FIRECRAWL_API_KEY, RUNNER_EMAIL_*, GIT_PUSH_*, etc.). Boot fails with named-key error if any required key missing.
 - [ ] T047 [P] Port 001 dashboard frontend shell to `src/dashboard/frontend/{index.html,app.js,style.css}` (per spec out-of-scope §"Keep")
 - [ ] T048 [P] Port 001 rater module to `src/rater/{index.ts,rubric.ts}` unchanged (FR-061, frozen rubric)
 - [ ] T049 [P] Port 001 hypothesis-matcher module to `src/hypothesis/` unchanged (FR-041)
-- [ ] T050 [P] Create `src/main.ts` — process role dispatcher; reads first CLI arg (`agent` | `control` | `dashboard`) and routes to appropriate boot
-- [ ] T051 Update root `CLAUDE.md` if any V2-specific reminders not yet captured (this file is already comprehensive)
+- [X] T050 [P] Create `src/main.ts` — process role dispatcher; reads first CLI arg (`agent` | `control` | `dashboard`) and routes to appropriate boot
+- [X] T051 Update root `CLAUDE.md` if any V2-specific reminders not yet captured (this file is already comprehensive)
 
 ---
 
@@ -124,54 +124,54 @@ description: "Task list for V2 Faithful Rebuild — feature 002-faithful-rebuild
 
 ### 14-component boot infrastructure
 
-- [ ] T052 Create `src/boot/components.ts` — canonical 14-name registry (FR-011); exports the array `CANONICAL_COMPONENTS = ['runcor', 'runcor-substrate', ..., 'runcor-coherence']`
-- [ ] T053 Create `src/boot/installer-check.ts` — calls `substrate.installer.isInstalled(engine)` AND runs the smoke check from research.md §R4 (synthetic discernment-failing prompt → expects 3 attempts + flag node + best-of-three return). Throws on either failure (FR-012).
-- [ ] T054 Create `src/boot/startup-record.ts` — builds `StartupRecord` per data-model.md (14 components with pinned versions + health + control-config hash)
-- [ ] T055 Create `src/boot/boot.ts` — orchestrates the 16-step boot sequence from `contracts/sibling-bindings.md` "Boot order"; fails closed on any component-init failure (FR-011); names the missing component(s) in the error message; publishes StartupRecord to dashboard
+- [X] T052 Create `src/boot/components.ts` — canonical 14-name registry (FR-011); exports the array `CANONICAL_COMPONENTS = ['runcor', 'runcor-substrate', ..., 'runcor-coherence']`
+- [X] T053 Create `src/boot/installer-check.ts` — calls `substrate.installer.isInstalled(engine)` AND runs the smoke check from research.md §R4 (synthetic discernment-failing prompt → expects 3 attempts + flag node + best-of-three return). Throws on either failure (FR-012).
+- [X] T054 Create `src/boot/startup-record.ts` — builds `StartupRecord` per data-model.md (14 components with pinned versions + health + control-config hash)
+- [X] T055 Create `src/boot/boot.ts` — orchestrates the 16-step boot sequence from `contracts/sibling-bindings.md` "Boot order"; fails closed on any component-init failure (FR-011); names the missing component(s) in the error message; publishes StartupRecord to dashboard
 
 ### Engine + flow registration
 
-- [ ] T056 Create `src/engine/factory.ts` — single source for V2 + control engine instantiation with provider registrations (OpenRouter); used by both processes (G6 enforcement)
-- [ ] T057 [P] Create `src/engine/flows/primordial-cycle.ts` — registers the `primordial-cycle` flow with the engine; flow handler makes one `modelRouter.complete()` call which the substrate installer wraps
-- [ ] T058 [P] Create `src/engine/flows/naive-control-cycle.ts` — registers the `naive-control-cycle` flow; single Player call, no dialectic (FR-101)
-- [ ] T059 Create `src/engine/telemetry.ts` — subscribes to engine `EventEmitter` events (`cost:request`, `adapter:tool_call`, `execution:state_change`, `provider:health_change`, `cost:budget_exceeded`) per research.md §R13; forwards to V2 `EventBus`
+- [X] T056 Create `src/engine/factory.ts` — single source for V2 + control engine instantiation with provider registrations (OpenRouter); used by both processes (G6 enforcement)
+- [X] T057 [P] Create `src/engine/flows/primordial-cycle.ts` — registers the `primordial-cycle` flow with the engine; flow handler makes one `modelRouter.complete()` call which the substrate installer wraps
+- [X] T058 [P] Create `src/engine/flows/naive-control-cycle.ts` — registers the `naive-control-cycle` flow; single Player call, no dialectic (FR-101)
+- [X] T059 Create `src/engine/telemetry.ts` — subscribes to engine `EventEmitter` events (`cost:request`, `adapter:tool_call`, `execution:state_change`, `provider:health_change`, `cost:budget_exceeded`) per research.md §R13; forwards to V2 `EventBus`
 
 ### Local in-process MCP server
 
-- [ ] T060 [P] Create `src/mcp-local/server.ts` — `@modelcontextprotocol/sdk` in-process server hosting V2's tool surface; exports `createLocalMcpServer({ tools })` returning the server + an `asAdapterConfig()` for `engine.addAdapter(...)` (FR-200, research.md §R11)
-- [ ] T061 [P] Create `src/mcp-local/tools/firecrawl-scrape.ts` per `contracts/mcp-local-tools.md` schema
-- [ ] T062 [P] Create `src/mcp-local/tools/inbox-read.ts` (imapflow)
-- [ ] T063 [P] Create `src/mcp-local/tools/email-send.ts` (nodemailer)
-- [ ] T064 [P] Create `src/mcp-local/tools/git-push.ts`
-- [ ] T065 [P] Create `src/mcp-local/tools/fs-read.ts` (path-safety guards)
-- [ ] T066 [P] Create `src/mcp-local/tools/fs-write.ts` (path-safety guards)
-- [ ] T067 [P] Create `src/mcp-local/tools/fetch-chunk.ts` (reads from runcor-data provenance cache)
-- [ ] T068 [P] Create `src/mcp-local/tools/web-search.ts` (provider-agnostic; selected at boot)
-- [ ] T069 [P] Create `src/mcp-local/tools/publish-post.ts` — calls `memory.record(content, { tags: ['daily_summary', 'day:<N>'], R: 0.7 })` per FR-062
-- [ ] T070 [P] Create `src/mcp-local/tools/terminate.ts` — records termination MemoryNode + triggers result.md generation (FR-050, FR-052, FR-110)
-- [ ] T071 Create `src/mcp-local/index.ts` — registers all 10 tools with the server + provides factory used by `boot.ts`
+- [X] T060 [P] Create `src/mcp-local/server.ts` — `@modelcontextprotocol/sdk` in-process server hosting V2's tool surface; exports `createLocalMcpServer({ tools })` returning the server + an `asAdapterConfig()` for `engine.addAdapter(...)` (FR-200, research.md §R11)
+- [X] T061 [P] Create `src/mcp-local/tools/firecrawl-scrape.ts` per `contracts/mcp-local-tools.md` schema
+- [X] T062 [P] Create `src/mcp-local/tools/inbox-read.ts` (imapflow)
+- [X] T063 [P] Create `src/mcp-local/tools/email-send.ts` (nodemailer)
+- [X] T064 [P] Create `src/mcp-local/tools/git-push.ts`
+- [X] T065 [P] Create `src/mcp-local/tools/fs-read.ts` (path-safety guards)
+- [X] T066 [P] Create `src/mcp-local/tools/fs-write.ts` (path-safety guards)
+- [X] T067 [P] Create `src/mcp-local/tools/fetch-chunk.ts` (reads from runcor-data provenance cache)
+- [X] T068 [P] Create `src/mcp-local/tools/web-search.ts` (provider-agnostic; selected at boot)
+- [X] T069 [P] Create `src/mcp-local/tools/publish-post.ts` — calls `memory.record(content, { tags: ['daily_summary', 'day:<N>'], R: 0.7 })` per FR-062
+- [X] T070 [P] Create `src/mcp-local/tools/terminate.ts` — records termination MemoryNode + triggers result.md generation (FR-050, FR-052, FR-110)
+- [X] T071 Create `src/mcp-local/index.ts` — registers all 10 tools with the server + provides factory used by `boot.ts`
 
 ### Cognitive component wiring
 
-- [ ] T072 [P] Wire memory in `boot.ts`: instantiate `MemorySystem` with `db: <agent|control>-memory.db` + config (FR-070)
-- [ ] T073 [P] Wire data cube in `boot.ts`: instantiate `DataCube` with `db: <agent|control>-data.db` (FR-080)
-- [ ] T074 [P] Wire integration in `boot.ts`: instantiate Integration; run `discoverSchemas({ reachable })` once at boot; `synthesizeTools(report, policy)` filtering destructive ops; `registerWithEngine(engine, tools)` (FR-090, FR-091, FR-092)
-- [ ] T075 [P] Wire substrate in `boot.ts`: instantiate per `contracts/prompt-stack-layers.md` "Layer registration" snippet (7 layers in deterministic order); `installer.install(engine)`; assert `isInstalled` + smoke check
-- [ ] T076 [P] Wire identity / goals / coherence with memory injection per R8 PRs (T034–T036)
-- [ ] T077 [P] Wire temporal: `createTemporal()` + new `computeNextWake` / `isDayBoundary` from T029/T030
-- [ ] T078 [P] Wire stateless components (drives, watchdog, skills, meta, dialectic) — no construction beyond import; called per cycle as functions
+- [X] T072 [P] Wire memory in `boot.ts`: instantiate `MemorySystem` with `db: <agent|control>-memory.db` + config (FR-070)
+- [X] T073 [P] Wire data cube in `boot.ts`: instantiate `DataCube` with `db: <agent|control>-data.db` (FR-080)
+- [X] T074 [P] Wire integration in `boot.ts`: instantiate Integration; run `discoverSchemas({ reachable })` once at boot; `synthesizeTools(report, policy)` filtering destructive ops; `registerWithEngine(engine, tools)` (FR-090, FR-091, FR-092)
+- [X] T075 [P] Wire substrate in `boot.ts`: instantiate per `contracts/prompt-stack-layers.md` "Layer registration" snippet (7 layers in deterministic order); `installer.install(engine)`; assert `isInstalled` + smoke check
+- [X] T076 [P] Wire identity / goals / coherence with memory injection per R8 PRs (T034–T036)
+- [X] T077 [P] Wire temporal: `createTemporal()` + new `computeNextWake` / `isDayBoundary` from T029/T030
+- [X] T078 [P] Wire stateless components (drives, watchdog, skills, meta, dialectic) — no construction beyond import; called per cycle as functions
 
 ### Dashboard scaffolding
 
-- [ ] T079 Create `src/dashboard/server.ts` — Node `http` server + SSE; ports 001's HTTP scaffolding + transcript-pagination cursor
-- [ ] T080 [P] Create `src/dashboard/auth.ts` — bearer-token middleware (`requireBearerToken(handler)`) checking `Authorization: Bearer <OPERATOR_AUTH_TOKEN>` (FR-132); 401 on missing/invalid
-- [ ] T081 [P] Create agent-egress filter for `/scores` route (FR-134) — rejects requests whose source IP / network identity matches the agent process even with valid token
-- [ ] T082 Create `src/dashboard/event-bus.ts` — single in-process bus; receives engine telemetry forwards (T059), substrate events (`prompt_assembled`, `discernment_flagged`), V2 cycle records; SSE route consumes from it
+- [X] T079 Create `src/dashboard/server.ts` — Node `http` server + SSE; ports 001's HTTP scaffolding + transcript-pagination cursor
+- [X] T080 [P] Create `src/dashboard/auth.ts` — bearer-token middleware (`requireBearerToken(handler)`) checking `Authorization: Bearer <OPERATOR_AUTH_TOKEN>` (FR-132); 401 on missing/invalid
+- [X] T081 [P] Create agent-egress filter for `/scores` route (FR-134) — rejects requests whose source IP / network identity matches the agent process even with valid token
+- [X] T082 Create `src/dashboard/event-bus.ts` — single in-process bus; receives engine telemetry forwards (T059), substrate events (`prompt_assembled`, `discernment_flagged`), V2 cycle records; SSE route consumes from it
 
 ### Control config + invariants
 
-- [ ] T083 Create `control-config.json` (frozen) per data-model.md §ControlConfig; SHA-256 hash computed at boot (FR-102) and published in StartupRecord (FR-011a)
-- [ ] T084 Create `src/control/config.ts` — loads + validates control-config.json; mid-run mutation detection forces both V2 + control restart (FR-103)
+- [X] T083 Create `control-config.json` (frozen) per data-model.md §ControlConfig; SHA-256 hash computed at boot (FR-102) and published in StartupRecord (FR-011a)
+- [X] T084 Create `src/control/config.ts` — loads + validates control-config.json; mid-run mutation detection forces both V2 + control restart (FR-103)
 
 **Checkpoint**: 14-component boot is functional, dashboard reachable, all telemetry wired, control-config hashed. User-story implementation begins.
 
@@ -185,9 +185,9 @@ description: "Task list for V2 Faithful Rebuild — feature 002-faithful-rebuild
 
 ### Tests for User Story 1
 
-- [ ] T085 [P] [US1] `tests/unit/boot-guard.spec.ts` — table-driven: for each of the 14 component names, simulate component absent → expect boot to fail with that component named in the error
-- [ ] T086 [P] [US1] `tests/unit/installer-engagement.spec.ts` — verifies `installer.isInstalled(engine)` returns false before `install()`, true after; smoke-test scenarios for non-engagement
-- [ ] T087 [P] [US1] `tests/integration/startup-record.spec.ts` — verifies dashboard StartupRecord shows all 14 components with pinned versions + health-check pass
+- [X] T085 [P] [US1] `tests/unit/boot-guard.spec.ts` — table-driven: for each of the 14 component names, simulate component absent → expect boot to fail with that component named in the error
+- [X] T086 [P] [US1] `tests/unit/installer-engagement.spec.ts` — verifies `installer.isInstalled(engine)` returns false before `install()`, true after; smoke-test scenarios for non-engagement
+- [X] T087 [P] [US1] `tests/integration/startup-record.spec.ts` — verifies dashboard StartupRecord shows all 14 components with pinned versions + health-check pass
 - [ ] T166 [P] [US1] `tests/integration/cycle-0-no-commercial-words.spec.ts` — captures cycle-0 prompt; asserts no occurrence of `sell|earn|customer|revenue|profit|MRR` (case-insensitive) anywhere in the assembled prompt (FR-003 enforcement; addresses C3)
 - [ ] T167 [P] [US1] `tests/integration/memory-corruption-fail-closed.spec.ts` — corrupt `agent-memory.db` SQLite header before boot, attempt boot, expect non-zero exit + named error mentioning `runcor-memory` (spec Edge Cases §"Memory store corruption"; addresses C6)
 - [ ] T168 [P] [US1] `tests/integration/installer-partial-patch-fail-closed.spec.ts` — simulate substrate installer engaging on the model-router instance method but not on a re-entry path (e.g., a class-level overwrite that masks the patch); boot guard MUST detect the partial state and fail closed (spec Edge Cases §"Substrate installer fails partway"; addresses C7)
@@ -234,7 +234,7 @@ description: "Task list for V2 Faithful Rebuild — feature 002-faithful-rebuild
 
 ### Tests for User Story 3
 
-- [ ] T097 [P] [US3] `tests/unit/context-builder.spec.ts` — verifies the FR-076 query template is exactly `"Goal: <top goal text>. Drive: <dominant drive label>. Last plan: <last plan précis>."` byte-for-byte; verifies cycle-0 contract (empty MemoryRecall when goals + plan empty per FR-076b)
+- [X] T097 [P] [US3] `tests/unit/context-builder.spec.ts` — verifies the FR-076 query template is exactly `"Goal: <top goal text>. Drive: <dominant drive label>. Last plan: <last plan précis>."` byte-for-byte; verifies cycle-0 contract (empty MemoryRecall when goals + plan empty per FR-076b)
 - [ ] T098 [P] [US3] `tests/unit/side-effects-atomicity.spec.ts` — verifies on `cycle_failed_call` (FR-018) NO memory.record / NO dataCube.ingest / NO action invocation; verifies on `completed_with_flag` (FR-019d) side effects DO commit
 - [ ] T099 [P] [US3] `tests/integration/memory-decay.spec.ts` — 50-cycle run; node accessed at cycle 5 has expected M after 45 cycles of decay; nodes below 0.05 retired from default recall (FR-073)
 - [ ] T171 [P] [US3] `tests/integration/summary-decay-no-exemption.spec.ts` — a `daily_summary`-tagged MemoryNode with no reinforcement decays on the same schedule as a generic episodic node; verifies NO decay-exemption / NO `is_summary` flag bypass / NO pinning (FR-062b)
@@ -244,11 +244,11 @@ description: "Task list for V2 Faithful Rebuild — feature 002-faithful-rebuild
 
 ### Implementation for User Story 3
 
-- [ ] T103 [US3] Create `src/agent/context-builder.ts` — assembles `LayerContext` per `contracts/sibling-bindings.md` step A: drives.computeDrives + goals.top + memory.getPlan + memory.query (with FR-076 template) + identity-from-memory + dataCube.query + engine.listAdapterTools
-- [ ] T104 [US3] Create `src/agent/side-effects.ts` — atomic post-cycle pipeline (steps C1–C7 from sibling-bindings.md): episodic memory.record → dataCube.ingest → identity.reflect (cadence) → goals.propose+accept (cadence) → watchdog.validateAll → skills.synthesize (cadence) → memory.cycle (R9)
-- [ ] T105 [US3] Create `src/agent/cycle.ts` — orchestrates per-cycle protocol: build context (T103) → engine.trigger('primordial-cycle', ...) → handle outcomes → side-effects (T104) → temporal.computeNextWake → repeat. Catches `ModelCallFailed` for `cycle_failed_call` (FR-018); reads `discernment_flagged` events for `completed_with_flag` (FR-019d)
-- [ ] T106 [US3] Create `src/agent/index.ts` — boot agent role (calls boot/boot.ts in 'agent' mode) → starts cycle loop → terminates on any of: 1000 cycles, $200 spend, terminate() called (FR-110)
-- [ ] T107 [US3] Wire `runDailySummary()` flow in `src/agent/cycle.ts`: when `temporal.isDayBoundary(...)` returns true, run a special cycle calling dialectic with `reflect-on-day.rpp` then invoking `publish_post` (FR-060–FR-063)
+- [X] T103 [US3] Create `src/agent/context-builder.ts` — assembles `LayerContext` per `contracts/sibling-bindings.md` step A: drives.computeDrives + goals.top + memory.getPlan + memory.query (with FR-076 template) + identity-from-memory + dataCube.query + engine.listAdapterTools
+- [X] T104 [US3] Create `src/agent/side-effects.ts` — atomic post-cycle pipeline (steps C1–C7 from sibling-bindings.md): episodic memory.record → dataCube.ingest → identity.reflect (cadence) → goals.propose+accept (cadence) → watchdog.validateAll → skills.synthesize (cadence) → memory.cycle (R9)
+- [X] T105 [US3] Create `src/agent/cycle.ts` — orchestrates per-cycle protocol: build context (T103) → engine.trigger('primordial-cycle', ...) → handle outcomes → side-effects (T104) → temporal.computeNextWake → repeat. Catches `ModelCallFailed` for `cycle_failed_call` (FR-018); reads `discernment_flagged` events for `completed_with_flag` (FR-019d)
+- [X] T106 [US3] Create `src/agent/index.ts` — boot agent role (calls boot/boot.ts in 'agent' mode) → starts cycle loop → terminates on any of: 1000 cycles, $200 spend, terminate() called (FR-110)
+- [X] T107 [US3] Wire `runDailySummary()` flow in `src/agent/cycle.ts`: when `temporal.isDayBoundary(...)` returns true, run a special cycle calling dialectic with `reflect-on-day.rpp` then invoking `publish_post` (FR-060–FR-063)
 
 **Checkpoint**: V2's cycle is faithful: context is harness-derived, side effects are atomic, daily summary fires from temporal.
 
@@ -262,14 +262,14 @@ description: "Task list for V2 Faithful Rebuild — feature 002-faithful-rebuild
 
 ### Tests for User Story 4
 
-- [ ] T108 [P] [US4] `tests/integration/control-parity.spec.ts` — both V2 and control processes' model calls show same engine/substrate signature in telemetry
-- [ ] T109 [P] [US4] `tests/integration/control-config-freeze.spec.ts` — modifying `control-config.json` mid-run forces both V2 + control to restart from cycle 0 (FR-103)
-- [ ] T110 [P] [US4] `tests/integration/control-isolated-stores.spec.ts` — V2 writes to `agent-memory.db` / `agent-data.db`; control reads from `control-memory.db` / `control-data.db`; stores are disjoint by default (FR-106)
+- [X] T108 [P] [US4] `tests/integration/control-parity.spec.ts` — both V2 and control processes' model calls show same engine/substrate signature in telemetry
+- [X] T109 [P] [US4] `tests/integration/control-config-freeze.spec.ts` — modifying `control-config.json` mid-run forces both V2 + control to restart from cycle 0 (FR-103)
+- [X] T110 [P] [US4] `tests/integration/control-isolated-stores.spec.ts` — V2 writes to `agent-memory.db` / `agent-data.db`; control reads from `control-memory.db` / `control-data.db`; stores are disjoint by default (FR-106)
 
 ### Implementation for User Story 4
 
-- [ ] T111 [US4] Create `src/control/cycle.ts` — single Player call per cycle via `engine.trigger('naive-control-cycle', ...)`; no dialectic, no meta, no watchdog, no skills, no drives, no identity, no goals, no temporal scheduling, no coherence (FR-101)
-- [ ] T112 [US4] Create `src/control/index.ts` — boot control role (calls boot/boot.ts in 'control' mode with cognitive components disabled per FR-101); fixed-cadence wake every 5 minutes (FR-105); reads memory + data in read-only mode (no record / no cycle / no ingest)
+- [X] T111 [US4] Create `src/control/cycle.ts` — single Player call per cycle via `engine.trigger('naive-control-cycle', ...)`; no dialectic, no meta, no watchdog, no skills, no drives, no identity, no goals, no temporal scheduling, no coherence (FR-101)
+- [X] T112 [US4] Create `src/control/index.ts` — boot control role (calls boot/boot.ts in 'control' mode with cognitive components disabled per FR-101); fixed-cadence wake every 5 minutes (FR-105); reads memory + data in read-only mode (no record / no cycle / no ingest)
 - [ ] T113 [US4] Update `src/main.ts` (T050) to dispatch `control` role to `src/control/index.ts`
 
 **Checkpoint**: V2 and control run side-by-side on identical infrastructure. The contrast is observable.
@@ -292,7 +292,7 @@ description: "Task list for V2 Faithful Rebuild — feature 002-faithful-rebuild
 
 (Mostly handled by Foundational T077 + T105's loop using temporal. Story 5 phase is verification + lint enforcement.)
 
-- [ ] T117 [US5] Add the no-fixed-timers lint rule to `src/shared/lints/no-fixed-timers.ts`; wire into `npm run typecheck` (matches the existing 001 + T045 / T165 pattern; pre-commit not used in this repo).
+- [X] T117 [US5] Add the no-fixed-timers lint rule to `src/shared/lints/no-fixed-timers.ts`; wire into `npm run typecheck` (matches the existing 001 + T045 / T165 pattern; pre-commit not used in this repo).
 
 **Checkpoint**: Cadence is harness-driven; the rhythm of life emerges from internal state.
 
@@ -306,18 +306,18 @@ description: "Task list for V2 Faithful Rebuild — feature 002-faithful-rebuild
 
 ### Tests for User Story 6
 
-- [ ] T118 [P] [US6] `tests/integration/no-orphan-tables.spec.ts` — after 50-cycle run, `ls *.db` only shows the 5 expected DBs (FR-016)
-- [ ] T119 [P] [US6] `tests/integration/identity-via-memory.spec.ts` — identity reflection produces a MemoryNode tagged `['identity_snapshot', 'version:N']` queryable via `memory.getAll()` (R8)
-- [ ] T120 [P] [US6] `tests/integration/goals-via-memory.spec.ts` — goal stack is a Plan in memory with PlanItems carrying `category: 'goal:*'`; proposals tagged `['goal_proposal', 'status:*']`
+- [X] T118 [P] [US6] `tests/integration/no-orphan-tables.spec.ts` — after 50-cycle run, `ls *.db` only shows the 5 expected DBs (FR-016)
+- [X] T119 [P] [US6] `tests/integration/identity-via-memory.spec.ts` — identity reflection produces a MemoryNode tagged `['identity_snapshot', 'version:N']` queryable via `memory.getAll()` (R8)
+- [X] T120 [P] [US6] `tests/integration/goals-via-memory.spec.ts` — goal stack is a Plan in memory with PlanItems carrying `category: 'goal:*'`; proposals tagged `['goal_proposal', 'status:*']`
 
 ### Implementation for User Story 6
 
 (Handled by Phase-0e R8 PRs (T034–T036) + Foundational T076 wiring. Story 6 phase is integration test.)
 
-- [ ] T121 [US6] Create `src/dashboard/routes/identity.ts` — reads latest MemoryNode tagged `['identity_snapshot']` per `contracts/sibling-bindings.md` step A5; sorts by `created_cycle desc`
-- [ ] T122 [US6] Create `src/dashboard/routes/goals.ts` — reads `memory.getPlan()` filtered to `category: 'goal:*'` PlanItems
-- [ ] T123 [US6] Create `src/dashboard/routes/watchdog.ts` — reads MemoryNodes tagged `['watchdog_finding', 'open']`
-- [ ] T124 [US6] Create `src/dashboard/routes/coherence.ts` — Plan filtered to `category: 'coherence_task'` + open coherence_problems
+- [X] T121 [US6] Create `src/dashboard/routes/identity.ts` — reads latest MemoryNode tagged `['identity_snapshot']` per `contracts/sibling-bindings.md` step A5; sorts by `created_cycle desc`
+- [X] T122 [US6] Create `src/dashboard/routes/goals.ts` — reads `memory.getPlan()` filtered to `category: 'goal:*'` PlanItems
+- [X] T123 [US6] Create `src/dashboard/routes/watchdog.ts` — reads MemoryNodes tagged `['watchdog_finding', 'open']`
+- [X] T124 [US6] Create `src/dashboard/routes/coherence.ts` — Plan filtered to `category: 'coherence_task'` + open coherence_problems
 
 **Checkpoint**: All cognitive state is queryable through memory; the dashboard's read paths reflect this.
 
@@ -339,7 +339,7 @@ description: "Task list for V2 Faithful Rebuild — feature 002-faithful-rebuild
 
 (Handled by Phase-0b runcor-integration PRs (T011–T015) + Foundational T074. Story 7 phase is integration verification + dashboard inventory route.)
 
-- [ ] T128 [US7] Add `src/dashboard/routes/tools.ts` (or extend `/startup-record`) showing dynamic + local tools currently registered; refreshes when integration runs
+- [X] T128 [US7] Add `src/dashboard/routes/tools.ts` (or extend `/startup-record`) showing dynamic + local tools currently registered; refreshes when integration runs
 
 **Checkpoint**: Action surface is plastic, growing from observed structure.
 
@@ -361,20 +361,20 @@ description: "Task list for V2 Faithful Rebuild — feature 002-faithful-rebuild
 
 ### Implementation for User Story 8
 
-- [ ] T134 [P] [US8] Create `src/dashboard/routes/memory.ts` per dashboard-api.md — pagination via `?after=<cursor>&limit=<n>`; default limit 50; returns stats + nodes (truncated content) + edges + current Plan
-- [ ] T135 [P] [US8] Create `src/dashboard/routes/memory-node.ts` — `GET /memory/node/:id` returning full content + edges + access history
-- [ ] T136 [P] [US8] Create `src/dashboard/routes/data.ts` per dashboard-api.md — entities + openConflicts + stats; pagination
-- [ ] T137 [P] [US8] Create `src/dashboard/routes/data-entity.ts` — `GET /data/entity/:id` full entity + edges + provenance
-- [ ] T138 [P] [US8] Create `src/dashboard/routes/blog.ts` — reads via `memory.getAll()` filtered by tag (FR-062a); rendered Markdown for `/blog/`; alias `/summaries`
-- [ ] T139 [P] [US8] Create `src/dashboard/routes/drives.ts` — recomputes 4 pressures per request via `runcor-drives.computeDrives({ memory, temporal })`
-- [ ] T140 [P] [US8] Create `src/dashboard/routes/scores.ts` — bearer-gated + agent-egress filter; reads from `rater.db`
-- [ ] T141 [P] [US8] Create `src/dashboard/operator-store.ts` — initialises `operator.db` SQLite schema with `operator_actions` table (id, ts, kind, payload, authenticatedAs) per data-model.md §OperatorAction (FR-130) — V2-local store distinct from any agent-state DB
-- [ ] T172 [P] [US8] Create `src/dashboard/routes/operator.ts` — `pause`, `resume`, `note` (bearer-gated POST per FR-132); `log` (public GET per FR-133); writes append to `operator.db` from T141
-- [ ] T142 [P] [US8] Create `src/dashboard/routes/control.ts` — mirror routes prefixed `/control/*`
-- [ ] T143 [P] [US8] Create `src/dashboard/routes/healthz.ts` per dashboard-api.md — liveness probe returning `{ ok, agentRole, cycles, budgetSpentUsd }`
-- [ ] T173 [P] [US8] Create `src/dashboard/routes/startup-record.ts` per dashboard-api.md — returns the boot record (14 components + pinned versions + health + control-config hash + substrate-installer-engaged) from T054
-- [ ] T144 [P] [US8] Wire 001-ported `/hypothesis` and `/rater` route shells into the new dashboard server (FR-041)
-- [ ] T145 [P] [US8] Add `/memory` and `/data` panels to the frontend (`src/dashboard/frontend/app.js`) — they were the explicit dashboard adds for 002
+- [X] T134 [P] [US8] Create `src/dashboard/routes/memory.ts` per dashboard-api.md — pagination via `?after=<cursor>&limit=<n>`; default limit 50; returns stats + nodes (truncated content) + edges + current Plan
+- [X] T135 [P] [US8] Create `src/dashboard/routes/memory-node.ts` — `GET /memory/node/:id` returning full content + edges + access history
+- [X] T136 [P] [US8] Create `src/dashboard/routes/data.ts` per dashboard-api.md — entities + openConflicts + stats; pagination
+- [X] T137 [P] [US8] Create `src/dashboard/routes/data-entity.ts` — `GET /data/entity/:id` full entity + edges + provenance
+- [X] T138 [P] [US8] Create `src/dashboard/routes/blog.ts` — reads via `memory.getAll()` filtered by tag (FR-062a); rendered Markdown for `/blog/`; alias `/summaries`
+- [X] T139 [P] [US8] Create `src/dashboard/routes/drives.ts` — recomputes 4 pressures per request via `runcor-drives.computeDrives({ memory, temporal })`
+- [X] T140 [P] [US8] Create `src/dashboard/routes/scores.ts` — bearer-gated + agent-egress filter; reads from `rater.db`
+- [X] T141 [P] [US8] Create `src/dashboard/operator-store.ts` — initialises `operator.db` SQLite schema with `operator_actions` table (id, ts, kind, payload, authenticatedAs) per data-model.md §OperatorAction (FR-130) — V2-local store distinct from any agent-state DB
+- [X] T172 [P] [US8] Create `src/dashboard/routes/operator.ts` — `pause`, `resume`, `note` (bearer-gated POST per FR-132); `log` (public GET per FR-133); writes append to `operator.db` from T141
+- [X] T142 [P] [US8] Create `src/dashboard/routes/control.ts` — mirror routes prefixed `/control/*`
+- [X] T143 [P] [US8] Create `src/dashboard/routes/healthz.ts` per dashboard-api.md — liveness probe returning `{ ok, agentRole, cycles, budgetSpentUsd }`
+- [X] T173 [P] [US8] Create `src/dashboard/routes/startup-record.ts` per dashboard-api.md — returns the boot record (14 components + pinned versions + health + control-config hash + substrate-installer-engaged) from T054
+- [X] T144 [P] [US8] Wire 001-ported `/hypothesis` and `/rater` route shells into the new dashboard server (FR-041)
+- [X] T145 [P] [US8] Add `/memory` and `/data` panels to the frontend (`src/dashboard/frontend/app.js`) — they were the explicit dashboard adds for 002
 
 **Checkpoint**: Dashboard surfaces parity with 001 plus the two new windows into accumulated state.
 
@@ -388,16 +388,16 @@ description: "Task list for V2 Faithful Rebuild — feature 002-faithful-rebuild
 
 ### Tests for User Story 9
 
-- [ ] T146 [P] [US9] `tests/integration/result-md-generation.spec.ts` — terminate at cycle 100 → result.md generated with V2's identity, V2's final goal stack, daily summaries (all), score trajectory, total spend, termination reason; same for control
-- [ ] T147 [P] [US9] `tests/integration/result-published-on-null.spec.ts` — terminate after 0 daily summaries → result.md still generated and published (Principle VII)
+- [X] T146 [P] [US9] `tests/integration/result-md-generation.spec.ts` — terminate at cycle 100 → result.md generated with V2's identity, V2's final goal stack, daily summaries (all), score trajectory, total spend, termination reason; same for control
+- [X] T147 [P] [US9] `tests/integration/result-published-on-null.spec.ts` — terminate after 0 daily summaries → result.md still generated and published (Principle VII)
 - [ ] T174 [P] [US9] `tests/integration/post-terminate-readonly.spec.ts` — after terminate(), assert dashboard read endpoints (`/transcript`, `/memory`, `/data`, `/blog`, `/identity`, `/goals`, `/result`) continue to serve their last state (FR-052); mutation endpoints (`/operator/pause`, `/operator/resume`, `/operator/note`) MUST return HTTP 503 with `code: 'terminated'` per dashboard-api.md error table
 - [ ] T175 [P] [US9] `tests/integration/terminate-during-summary.spec.ts` — agent calls `terminate()` mid-flight while a daily-summary cycle is running; the in-flight summary completes (best-effort) and is published before exit (spec Edge Cases §"Terminate during daily-summary generation"; addresses C16)
 
 ### Implementation for User Story 9
 
-- [ ] T148 [US9] Create `src/agent/result-md.ts` — generator triggered on any end condition (FR-110); pulls from runcor-memory (summaries by tag, identity by tag, goals as Plan), rater.db, telemetry
-- [ ] T149 [US9] Create `src/agent/result-publisher.ts` — git push to results repo; link from dashboard `/result` route
-- [ ] T150 [US9] Create `src/dashboard/routes/result.ts` — serves the generated result.md (or 404 until first run ends)
+- [X] T148 [US9] Create `src/agent/result-md.ts` — generator triggered on any end condition (FR-110); pulls from runcor-memory (summaries by tag, identity by tag, goals as Plan), rater.db, telemetry
+- [X] T149 [US9] Create `src/agent/result-publisher.ts` — git push to results repo; link from dashboard `/result` route
+- [X] T150 [US9] Create `src/dashboard/routes/result.ts` — serves the generated result.md (or 404 until first run ends)
 
 **Checkpoint**: Negative results have an output. Honesty closed-loop.
 
@@ -408,13 +408,13 @@ description: "Task list for V2 Faithful Rebuild — feature 002-faithful-rebuild
 **Purpose**: Final hardening before deploy.
 
 - [ ] T151 [P] Run full test suite (`npm test`); confirm count ≥ 90 (the 001 regression floor) plus all new tests; all green
-- [ ] T152 [P] Run `npm run typecheck` — zero errors
-- [ ] T153 [P] Run `npm run preflight` — env vars + sibling-resolution sanity
+- [X] T152 [P] Run `npm run typecheck` — zero errors
+- [X] T153 [P] Run `npm run preflight` — env vars + sibling-resolution sanity
 - [ ] T154 [P] Walk through `quickstart.md` step-by-step on a fresh clone to validate the whole path; fix any docs gap
 - [ ] T155 [P] Validate `/scores` blocking from agent egress against a real Railway deploy (with the agent process's egress IP set)
-- [ ] T176 [P] Implement continuous harness-engagement monitor in `src/agent/cycle.ts` — interval from `HARNESS_MONITOR_INTERVAL_CYCLES` env var (default 100); each fire re-runs `substrate.installer.isInstalled(engine)` + 14-component liveness ping; emits `harness_engaged` / `harness_disengaged` telemetry events; halts cycle loop on disengagement pending operator review (FR-019g; SC-005; addresses C5). Cross-cutting concern, not story-scoped.
-- [ ] T177 [P] `tests/integration/continuous-harness-monitor.spec.ts` — simulate substrate uninstalling at cycle 150; expect cycle 200's monitor to detect, emit `harness_disengaged`, halt loop. Tests FR-019g + SC-005.
-- [ ] T156 [P] Verify the constitutional alignment table in `spec.md` still maps every Principle → at least one FR; add any new FR introduced during implementation
+- [X] T176 [P] Implement continuous harness-engagement monitor in `src/agent/cycle.ts` — interval from `HARNESS_MONITOR_INTERVAL_CYCLES` env var (default 100); each fire re-runs `substrate.installer.isInstalled(engine)` + 14-component liveness ping; emits `harness_engaged` / `harness_disengaged` telemetry events; halts cycle loop on disengagement pending operator review (FR-019g; SC-005; addresses C5). Cross-cutting concern, not story-scoped.
+- [X] T177 [P] `tests/integration/continuous-harness-monitor.spec.ts` — simulate substrate uninstalling at cycle 150; expect cycle 200's monitor to detect, emit `harness_disengaged`, halt loop. Tests FR-019g + SC-005.
+- [X] T156 [P] Verify the constitutional alignment table in `spec.md` still maps every Principle → at least one FR; add any new FR introduced during implementation
 - [ ] T157 Run `/speckit.analyze` to detect any spec/plan/tasks drift introduced during implementation
 - [ ] T158 Update root `README.md` with V2's current commit SHA + Railway deploy status
 - [ ] T159 Tag a `v2-002-rc1` git tag for the implementation milestone (do NOT push to main yet — main triggers Railway auto-deploy per CLAUDE.md §11)
