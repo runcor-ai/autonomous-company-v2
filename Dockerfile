@@ -16,7 +16,10 @@ WORKDIR /workspace
 
 # Clone every sibling at runcor-ai, then build each so its dist/ + node_modules
 # are populated. (Siblings .gitignore dist/, so we build at deploy time.)
-RUN for r in runcor-coherence runcor-dialectic runcor-drives runcor-goals \
+# V2-002 added 5 siblings to the harness: runcor (engine), runcor-substrate,
+# runcor-memory, runcor-data, runcor-integration.
+RUN for r in runcor runcor-substrate runcor-memory runcor-data runcor-integration \
+             runcor-coherence runcor-dialectic runcor-drives runcor-goals \
              runcor-identity runcor-meta runcor-skills runcor-temporal \
              runcor-watchdog rpp-parser; do \
       echo "=== cloning $r ===" && \
