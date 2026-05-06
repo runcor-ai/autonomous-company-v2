@@ -28,7 +28,7 @@ Rebuild V2 on the complete 14-component runcor harness. The architectural shift 
 - Dashboard endpoint p95 < 500ms for read endpoints (`/memory`, `/data` may be slower if listing 1000+ nodes — pagination supported).
 - Daily summary visible on dashboard within 60s of publication (FR-063).
 **Constraints**:
-- Single $200 token cap per agent (FR-110).
+- Single $5 token cap per agent (FR-110).
 - 30s minimum / 6h maximum gap between V2 wakes (FR-020a, FR-020b).
 - 5-minute fixed cadence for the control (FR-105).
 - 1000-cycle ceiling per agent (FR-110).

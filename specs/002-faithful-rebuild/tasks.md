@@ -247,7 +247,7 @@ description: "Task list for V2 Faithful Rebuild — feature 002-faithful-rebuild
 - [X] T103 [US3] Create `src/agent/context-builder.ts` — assembles `LayerContext` per `contracts/sibling-bindings.md` step A: drives.computeDrives + goals.top + memory.getPlan + memory.query (with FR-076 template) + identity-from-memory + dataCube.query + engine.listAdapterTools
 - [X] T104 [US3] Create `src/agent/side-effects.ts` — atomic post-cycle pipeline (steps C1–C7 from sibling-bindings.md): episodic memory.record → dataCube.ingest → identity.reflect (cadence) → goals.propose+accept (cadence) → watchdog.validateAll → skills.synthesize (cadence) → memory.cycle (R9)
 - [X] T105 [US3] Create `src/agent/cycle.ts` — orchestrates per-cycle protocol: build context (T103) → engine.trigger('primordial-cycle', ...) → handle outcomes → side-effects (T104) → temporal.computeNextWake → repeat. Catches `ModelCallFailed` for `cycle_failed_call` (FR-018); reads `discernment_flagged` events for `completed_with_flag` (FR-019d)
-- [X] T106 [US3] Create `src/agent/index.ts` — boot agent role (calls boot/boot.ts in 'agent' mode) → starts cycle loop → terminates on any of: 1000 cycles, $200 spend, terminate() called (FR-110)
+- [X] T106 [US3] Create `src/agent/index.ts` — boot agent role (calls boot/boot.ts in 'agent' mode) → starts cycle loop → terminates on any of: 1000 cycles, $5 spend, terminate() called (FR-110)
 - [X] T107 [US3] Wire `runDailySummary()` flow in `src/agent/cycle.ts`: when `temporal.isDayBoundary(...)` returns true, run a special cycle calling dialectic with `reflect-on-day.rpp` then invoking `publish_post` (FR-060–FR-063)
 
 **Checkpoint**: V2's cycle is faithful: context is harness-derived, side effects are atomic, daily summary fires from temporal.
@@ -382,7 +382,7 @@ description: "Task list for V2 Faithful Rebuild — feature 002-faithful-rebuild
 
 ## Phase 11: User Story 9 — Result publication (Priority: P3)
 
-**Goal**: When V2 ends (1000 cycles, $200 spend, or terminate()), `result.md` auto-generates with V2 + control summaries / scores / spend / termination reason; published to public repo regardless of outcome.
+**Goal**: When V2 ends (1000 cycles, $5 spend, or terminate()), `result.md` auto-generates with V2 + control summaries / scores / spend / termination reason; published to public repo regardless of outcome.
 
 **Independent Test**: Force end condition. `result.md` MUST be generated, MUST include all listed sections, MUST be linked from dashboard.
 

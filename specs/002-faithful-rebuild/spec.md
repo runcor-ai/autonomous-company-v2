@@ -155,7 +155,7 @@ The dashboard exposes read-only views into the agent's accumulated mental state:
 
 ### User Story 9 — Result publication is unconditional (Priority: P3)
 
-When the experiment ends (any of: 1000 cycles, $200 spend, agent calls `terminate()`), a `result.md` is auto-generated containing V2's final identity, V2's final goal stack, V2's daily summaries, V2's score trajectory, the control's daily summaries, the control's score trajectory, total token spend per agent, termination reason per agent — and is published regardless of qualitative outcome.
+When the experiment ends (any of: 1000 cycles, $5 spend, agent calls `terminate()`), a `result.md` is auto-generated containing V2's final identity, V2's final goal stack, V2's daily summaries, V2's score trajectory, the control's daily summaries, the control's score trajectory, total token spend per agent, termination reason per agent — and is published regardless of qualitative outcome.
 
 **Why this priority**: Constitution Principle VII — negative results count. A null result published honestly is the experiment's contribution if no emergence occurs.
 
@@ -177,7 +177,7 @@ When the experiment ends (any of: 1000 cycles, $200 spend, agent calls `terminat
 - **Discernment gate consensus loop**: A re-ask triggered by the gate produces another gate failure. Bounded at 3 attempts per FR-019b (each re-ask carries the prior verdict as feedback per FR-019b1). On exhaustion the substrate writes a `discernment_flag` MemoryNode (FR-019c), returns the best-of-three response (FR-019d), and the cycle proceeds normally with side effects committing. The flag is a persistent audit artifact surfaced on the dashboard (FR-019d1) and re-entering the agent's MemoryRecall when contextually relevant (FR-019d2). A burst of consecutive flags surfaces as a dashboard warning (FR-019f).
 - **Integration discovers a destructive tool**: A schema yields a synthesised tool that could damage external systems (e.g. `DROP TABLE`). Such tools MUST be filtered out at synthesis time by an explicit allow-list policy in `runcor-integration`.
 - **Terminate during daily-summary generation**: Agent calls `terminate()` while the day-boundary flow is mid-flight. The summary completes (best-effort) and is published before exit.
-- **Control vs V2 budget asymmetry**: Each tracks its own $200 cap; one ending does not stop the other. If a shared infrastructure cost (rater, dashboard) is asymmetric, it is excluded from agent budgets.
+- **Control vs V2 budget asymmetry**: Each tracks its own $5 cap; one ending does not stop the other. If a shared infrastructure cost (rater, dashboard) is asymmetric, it is excluded from agent budgets.
 - **Memory namespace contamination**: V2 and control must operate on disjoint memory and data stores by default — accidentally pointing both at the same store would invalidate Principle X.
 
 ---
@@ -206,7 +206,7 @@ When the experiment ends (any of: 1000 cycles, $200 spend, agent calls `terminat
 - **FR-017**: `runcor.modelRouter` MUST implement bounded retry on transient call failures (network errors, provider 5xx, rate-limit 429, timeouts): up to 3 attempts with exponential backoff. Non-transient errors (4xx other than 429, malformed-request, auth failures) MUST NOT be retried.
 - **FR-018**: After retry exhaustion, the cycle MUST be recorded on the dashboard transcript as `cycle_failed_call` with the failure reason, attempts made, and tokens spent. The cycle MUST NOT write to `runcor-memory`, MUST NOT write to `runcor-data`, and MUST NOT execute any outward action — all cycle side effects are atomic on a successful, gated response.
 - **FR-019**: After a `cycle_failed_call`, `runcor-temporal.computeNextWake()` is invoked normally; no special back-off applies at the agent layer beyond what is already captured by drive pressures.
-- **FR-019a**: Tokens consumed during failed attempts still count against the $200 budget (Principle VI parity — control bears the same cost on its own retries).
+- **FR-019a**: Tokens consumed during failed attempts still count against the $5 budget (Principle VI parity — control bears the same cost on its own retries).
 
 ### Discernment-gate exhaustion handling (retry-then-flag)
 
@@ -220,7 +220,7 @@ When the experiment ends (any of: 1000 cycles, $200 spend, agent calls `terminat
 - **FR-019d3**: V2 MUST treat the substrate's existing `Outcome: 'modify'` verdict as `'re-ask'` (NOT `'pass'` — would let substrate edit agent output, bypassing Principle V; NOT `'discard'` — leaves cycle with no output and breaks the cycle protocol). `'modify'` and `'block'` consume one of the 3 retry slots and re-ask with the substrate's verdict as feedback. `'escalate'` is the substrate signalling *"stop trying, this needs flagging"* — it terminates the retry loop immediately on first occurrence and rolls straight into flag. Retry-then-flag fires after 3 attempts of `modify`/`block` (or 1 attempt of `escalate`) without reaching `'pass'`. **(Operator decision 2026-05-05.)**
 - **FR-019d1**: The dashboard transcript MUST show every flagged cycle prominently — a `discernment_flagged` event per FR-019c, with the failed Law id, the response that was returned despite the flag, and a link to the flag MemoryNode. Observers can visually distinguish flagged cycles from clean ones (Principle III).
 - **FR-019d2**: The agent's MemoryRecall layer (FR-076) WILL surface `discernment_flag` MemoryNodes via the normal query path when relevant — i.e., past Law violations naturally re-enter the agent's context when goal/drive context aligns. This is the feedback loop that makes flags more than a passive log.
-- **FR-019e**: `runcor-temporal.computeNextWake()` is invoked normally. Tokens consumed across the 3 attempts still count against the $200 budget. There is NO special back-off following a flagged cycle (the substrate gate fires identically on the next cycle).
+- **FR-019e**: `runcor-temporal.computeNextWake()` is invoked normally. Tokens consumed across the 3 attempts still count against the $5 budget. There is NO special back-off following a flagged cycle (the substrate gate fires identically on the next cycle).
 - **FR-019f**: A consecutive-flag rate exceeding a threshold (default: ≥ 5 flags in any 10-cycle window) MUST surface as a dashboard health signal `flag_burst_warning` so observers can investigate operator-actionable problems (e.g., a model deployment regression). This is observability, not gating — the agent continues running.
 - **FR-019g**: V2 MUST run a periodic harness-engagement health check. **Cadence is configured via the `HARNESS_MONITOR_INTERVAL_CYCLES` env var (default: 100 cycles).** Each check (a) calls `substrate.installer.isInstalled(engine)` — fails closed if returns false; (b) pings each of the 14 components for liveness — fails closed if any reports unhealthy; (c) emits a `harness_engaged` telemetry event on success or `harness_disengaged` event on failure. A `harness_disengaged` event halts the cycle loop pending operator review. This is what makes SC-005 ("Boot integrity holds for the entire run") testable beyond the boot moment.
 
@@ -303,7 +303,7 @@ When the experiment ends (any of: 1000 cycles, $200 spend, agent calls `terminat
 
 ### Stopping (V2 + control)
 
-- **FR-110**: Run terminates when ANY of: (a) 1000 cycles reached, (b) $200 token spend reached, (c) `terminate()` called.
+- **FR-110**: Run terminates when ANY of: (a) `$V2_BUDGET_USD` token spend reached (default $5), (b) `terminate()` called. There is NO hard cycle ceiling — the experiment runs continuously until budget exhaustion or self-termination. (`MAX_CYCLES` env var exists as a soft kill-switch for ops; default is effectively unlimited.) **(Operator decision 2026-05-06: continuous-run experiment; budget-bound termination is the canonical end condition.)**
 - **FR-110a**: V2 and control track end conditions independently. One ending does NOT stop the other.
 
 ### Result publication (Principle VII — negative results count)
@@ -364,7 +364,7 @@ When the experiment ends (any of: 1000 cycles, $200 spend, agent calls `terminat
 - **Action set as inherited from 001 (subject to FR-200)**: The seven concrete outward actions Firecrawl scrape, IMAP read, SMTP send, Git push, fs read/write, fetch_chunk, web_search are the starting set. `runcor-integration` may grow this set dynamically.
 - **No 001 source ports beyond dashboard shell + control prompt seed**: The 001 frontend (HTML/JS/CSS), HTTP scaffolding for the dashboard server, transcript pagination cursor, fixed-rubric rater, hypothesis evaluator, and the control's Player prompt seed text are reused. All other 001 source is discarded — see CLAUDE.md §6.
 - **Persistent volume retained for forensics, not resumption**: 001's `/agent-state/` volume is preserved for post-mortem inspection but is not read by V2 — V2 starts cycle 0 with empty stores.
-- **Same 14-component, same constitution, same dollar budget**: $200 token cap per agent, identical model mix (Nemotron / Qwen / Llama via OpenRouter), constitution at `.specify/memory/constitution.md`.
+- **Same 14-component, same constitution, same dollar budget**: $5 token cap per agent, identical model mix (Nemotron / Qwen / Llama via OpenRouter), constitution at `.specify/memory/constitution.md`.
 
 ---
 

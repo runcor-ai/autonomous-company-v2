@@ -78,12 +78,14 @@ export function loadV2Env(): V2Env {
   const env: V2Env = {
     openrouterApiKey: reqEnv('OPENROUTER_API_KEY'),
     operatorAuthToken: reqEnv('OPERATOR_AUTH_TOKEN'),
-    maxCycles: intEnv('MAX_CYCLES', 1000),
-    // Defaults pinned to spec FR-110 + Principle VI ($200 token cap per agent). The repo's
-    // `.env` may override to a smaller cap for smoke runs (e.g., V2_BUDGET_USD=5) — that's
-    // intentional. Don't drift the defaults below 200 again without amending the spec.
-    v2BudgetUsd: intEnv('V2_BUDGET_USD', 200),
-    controlBudgetUsd: intEnv('CONTROL_BUDGET_USD', 200),
+    // FR-110 (operator decision 2026-05-06): continuous-run experiment. No hard cycle
+    // ceiling; budget is the canonical end condition. MAX_CYCLES exists only as a soft
+    // ops kill-switch — default is effectively unlimited.
+    maxCycles: intEnv('MAX_CYCLES', 999999999),
+    // FR-110 budget cap. Default $5 matches the operator's standing instruction
+    // (matches 001's operating budget). Both V2 and control track independently.
+    v2BudgetUsd: intEnv('V2_BUDGET_USD', 5),
+    controlBudgetUsd: intEnv('CONTROL_BUDGET_USD', 5),
     controlIntervalSeconds: intEnv('CONTROL_INTERVAL_SECONDS', 300),
     dashboardHost: optEnv('DASHBOARD_HOST') ?? '0.0.0.0',
     dashboardPort: intEnv('DASHBOARD_PORT', 8080),
