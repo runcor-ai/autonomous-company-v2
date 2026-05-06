@@ -1,4 +1,4 @@
-# CLAUDE.md — autonomous-company-v2
+﻿# CLAUDE.md — autonomous-company-v2
 
 This file is the **fresh-session bootstrap**. A new Claude session should be able to drive the V2 rebuild end-to-end using nothing but this file plus `.specify/memory/constitution.md` and the spec-kit slash commands.
 
