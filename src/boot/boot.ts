@@ -108,7 +108,13 @@ function verifyComponentResolution(): Partial<Record<CanonicalComponentName, { s
   const missing: string[] = [];
   for (const name of CANONICAL_COMPONENTS) {
     try {
-      componentRequire(`${name}/package.json`);
+      // Use require.resolve(name) instead of require(`${name}/package.json`).
+      // Most siblings ship an `exports` field that whitelists only `.` and not
+      // `./package.json`, so the package.json subpath form fails Node's strict
+      // subpath-exports check (ERR_PACKAGE_PATH_NOT_EXPORTED) even though the
+      // module is fully resolvable. require.resolve(name) goes through the
+      // main exports entry, which is always allowed.
+      componentRequire.resolve(name);
       health[name] = { status: 'pass' };
     } catch (err) {
       missing.push(name);
