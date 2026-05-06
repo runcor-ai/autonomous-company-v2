@@ -220,104 +220,85 @@ const md = (text) => {
 const escapeHtml = (s) => s.replace(/[&<>"']/g, (c) =>
   ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 
-function renderCycleEntry(kind, c) {
-  const decisions = c.decisions ?? [];
-  const actions = c.actions ?? [];
-  const totalCost = decisions.reduce((s, d) => s + (d.costUsd || 0), 0);
-  const totalTokens = decisions.reduce((s, d) => s + (d.promptTokens || 0) + (d.completionTokens || 0), 0);
-  const ts = c.completedAt ?? c.startedAt ?? '';
+// V2-002 transcript: bus events grouped by (agentRole, cycle). Each cycle shows the
+// events that fired during it (prompt_assembled, discernment, cost_request, etc).
 
-  let body = '';
-  for (const d of decisions) {
-    body += `
-      <div class="t-decision">
-        <div class="t-d-meta">${escapeHtml(d.role)}/${escapeHtml(d.model)} · ${d.promptTokens}p+${d.completionTokens}c tok · $${(d.costUsd || 0).toFixed(6)}</div>
-        <div class="t-d-output">${md(d.output)}</div>
-      </div>`;
+const TRANSCRIPT_LIMIT = 200;
+let renderScheduled = false;
+
+function renderEventLine(ev) {
+  const time = new Date(ev.ts ?? Date.now()).toISOString().slice(11, 19);
+  const type = ev.event ?? '?';
+  const data = ev.data ?? {};
+  let summary = '';
+  if (type === 'cycle_record') {
+    summary = `status=${data.status ?? '?'} (${(data.endedAt ?? 0) - (data.startedAt ?? 0)}ms)`;
+  } else if (type === 'prompt_assembled') {
+    summary = `layers=[${(data.nonEmptyLayers ?? []).join(',')}]`;
+  } else if (type === 'discernment') {
+    summary = `verdict=${data.verdict ?? data.outcome ?? '?'}`;
+  } else if (type === 'discernment_flagged') {
+    summary = `law=${data.failedLawId ?? '?'}`;
+  } else if (type === 'cost_request') {
+    summary = `cost=$${(data.cost ?? 0).toFixed(6)} model=${data.model ?? '?'}`;
+  } else if (type === 'next_wake_scheduled') {
+    summary = `${Math.round((data.ms ?? 0) / 1000)}s — ${data.reason ?? ''}`;
+  } else if (type === 'adapter_tool_call') {
+    summary = `${data.toolName ?? '?'}`;
+  } else {
+    summary = JSON.stringify(data).slice(0, 80);
   }
-  for (const a of actions) {
-    const payload = a.payload !== undefined && a.payload !== null
-      ? `<code class="t-payload">${escapeHtml(JSON.stringify(a.payload))}</code>`
-      : '';
-    body += `<div class="t-action"><span class="t-tag t-tag-action">action</span> <strong>${escapeHtml(String(a.action))}</strong> ${payload}</div>`;
-  }
-  return `
-    <article class="t-entry t-${kind}">
-      <header class="t-head">
-        <span class="t-tag t-tag-${kind}">${kind}</span>
-        <span class="t-cycle">cycle ${c.cycleNumber}</span>
-        <span class="t-status t-status-${c.status}">${c.status}</span>
-        <span class="t-cost">$${totalCost.toFixed(6)} · ${totalTokens} tok</span>
-        <span class="t-time">${ts.slice(11, 19)}</span>
-      </header>
-      ${body}
-    </article>`;
+  return `<div class="t-event"><span class="t-time">${time}</span> <span class="t-tag">${type}</span> ${escapeHtml(summary)}</div>`;
 }
 
-let currentCyclesCache = { v2: [], control: [] };
-let renderScheduled = false;
-const TRANSCRIPT_LIMIT = 30;
-let loadingOlder = { v2: false, control: false };
+function renderCycleBlock(kind, cycle, events) {
+  const evs = events.map(renderEventLine).join('');
+  return `<article class="t-entry t-${kind}">
+    <header class="t-head">
+      <span class="t-tag t-tag-${kind}">${kind}</span>
+      <span class="t-cycle">cycle ${cycle}</span>
+      <span class="t-status">${events.length} events</span>
+    </header>
+    ${evs}
+  </article>`;
+}
+
+let cachedEvents = [];
 
 function renderTranscript() {
-  // Two columns side-by-side, V2 left + control right. Each column shows its
-  // own cycles most-recent-first.
-  const sortDesc = (a, b) => (b.startedAt || '').localeCompare(a.startedAt || '');
-  const v2Sorted = [...currentCyclesCache.v2].sort(sortDesc);
-  const ctrlSorted = [...currentCyclesCache.control].sort(sortDesc);
-  const olderBtn = (kind, list) => list.length === 0 ? '' :
-    `<button class="t-older" data-kind="${kind}">Load older cycles</button>`;
-  $('transcript-v2').innerHTML = v2Sorted.length === 0
-    ? '<div class="muted">no V2 cycles yet</div>'
-    : v2Sorted.map((c) => renderCycleEntry('v2', c)).join('') + olderBtn('v2', v2Sorted);
-  $('transcript-control').innerHTML = ctrlSorted.length === 0
-    ? '<div class="muted">no control cycles yet</div>'
-    : ctrlSorted.map((c) => renderCycleEntry('control', c)).join('') + olderBtn('control', ctrlSorted);
-  $('v2-transcript-count').textContent = `${v2Sorted.length} cycles`;
-  $('control-transcript-count').textContent = `${ctrlSorted.length} cycles`;
-  $('transcript-status').textContent = `(${v2Sorted.length} V2 + ${ctrlSorted.length} control)`;
+  // Group events by (agentRole, cycle). Render most-recent cycle first per column.
+  const byRole = { v2: new Map(), control: new Map() };
+  for (const ev of cachedEvents) {
+    const role = ev.data?.agentRole === 'control' ? 'control' : 'v2';
+    const cycle = typeof ev.data?.cycle === 'number' ? ev.data.cycle : -1;
+    if (!byRole[role].has(cycle)) byRole[role].set(cycle, []);
+    byRole[role].get(cycle).push(ev);
+  }
 
-  document.querySelectorAll('.t-older').forEach((btn) => {
-    btn.addEventListener('click', () => loadOlder(btn.dataset.kind));
-  });
+  for (const role of ['v2', 'control']) {
+    const cycles = Array.from(byRole[role].entries()).sort((a, b) => b[0] - a[0]);
+    const el = $(`transcript-${role}`);
+    if (!el) continue;
+    el.innerHTML = cycles.length === 0
+      ? `<div class="muted">no ${role} events yet</div>`
+      : cycles.map(([c, evs]) => renderCycleBlock(role, c, evs)).join('');
+    const countEl = $(`${role}-transcript-count`);
+    if (countEl) countEl.textContent = `${cycles.length} cycles`;
+  }
+  const statusEl = $('transcript-status');
+  if (statusEl) {
+    const v2Count = byRole.v2.size;
+    const ctrlCount = byRole.control.size;
+    statusEl.textContent = `(${v2Count} V2 + ${ctrlCount} control)`;
+  }
 }
 
 async function reloadTranscript() {
-  // Recent slice — returns the newest TRANSCRIPT_LIMIT cycles. Lazy-load older
-  // appends via loadOlder(kind).
-  const [v2, ctrl] = await Promise.all([
-    fetchJson(`/v2/transcript?limit=${TRANSCRIPT_LIMIT}`),
-    fetchJson(`/control/transcript?limit=${TRANSCRIPT_LIMIT}`),
-  ]);
-  if (Array.isArray(v2)) currentCyclesCache.v2 = mergeCycles(currentCyclesCache.v2, v2);
-  if (Array.isArray(ctrl)) currentCyclesCache.control = mergeCycles(currentCyclesCache.control, ctrl);
-  renderTranscript();
-}
-
-function mergeCycles(existing, incoming) {
-  // Dedup by cycleNumber + status (status can change running→complete).
-  const map = new Map();
-  for (const c of existing) map.set(c.cycleNumber, c);
-  for (const c of incoming) map.set(c.cycleNumber, c);
-  return Array.from(map.values());
-}
-
-async function loadOlder(kind) {
-  if (loadingOlder[kind]) return;
-  loadingOlder[kind] = true;
-  const cache = currentCyclesCache[kind];
-  const oldestCycleNumber = cache.length > 0
-    ? Math.min(...cache.map((c) => c.cycleNumber))
-    : undefined;
-  const url = oldestCycleNumber !== undefined
-    ? `/${kind}/transcript?limit=${TRANSCRIPT_LIMIT}&before=${oldestCycleNumber}`
-    : `/${kind}/transcript?limit=${TRANSCRIPT_LIMIT}`;
-  const data = await fetchJson(url);
-  if (Array.isArray(data) && data.length > 0) {
-    currentCyclesCache[kind] = mergeCycles(currentCyclesCache[kind], data);
+  const data = await fetchJson(`/transcript?limit=${TRANSCRIPT_LIMIT}`);
+  if (data?.events && Array.isArray(data.events)) {
+    cachedEvents = data.events;
     renderTranscript();
   }
-  loadingOlder[kind] = false;
 }
 
 function scheduleTranscriptReload() {
@@ -329,9 +310,16 @@ function scheduleTranscriptReload() {
 function startSse() {
   let es;
   const connect = () => {
-    es = new EventSource('/transcript/live');
+    es = new EventSource('/transcript');
     es.onerror = () => { es.close(); setTimeout(connect, 3000); };
-    ['cycle', 'decision', 'action', 'summary', 'score', 'operator'].forEach((t) => {
+    // V2-002 emits these event types per src/dashboard/server.ts eventNames list.
+    const eventTypes = [
+      'cycle_record', 'prompt_assembled', 'discernment', 'discernment_flagged',
+      'flag_burst_warning', 'cost_request', 'execution_state_change',
+      'execution_complete', 'adapter_tool_call', 'next_wake_scheduled',
+      'day_boundary', 'harness_engaged', 'harness_disengaged',
+    ];
+    eventTypes.forEach((t) => {
       es.addEventListener(t, () => scheduleTranscriptReload());
     });
   };

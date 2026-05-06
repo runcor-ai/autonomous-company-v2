@@ -90,8 +90,19 @@ function makeOpenRouterProvider(opts: CreateV2EngineOptions): ModelProvider {
 export async function createV2Engine(options: CreateV2EngineOptions) {
   const provider = makeOpenRouterProvider(options);
 
+  // costPerToken enables runcor's CostTracker — without it, no `cost:request` events
+  // fire and the spent meter stays at $0, breaking the budget cap.
+  // Numbers are a blended OpenRouter approximation (V2 routes across Nemotron / Qwen /
+  // Llama / Gemini Flash etc; per-model exact pricing isn't available without a model
+  // routing config). Conservative upper-bound: ~$1/1M input, ~$3/1M output. This will
+  // over-estimate slightly vs actual OpenRouter invoice — fine for budget-cap purposes
+  // (terminates a bit before the true $5 instead of after).
   const engineConfig: EngineConfig = {
-    model: { provider },
+    model: {
+      providers: [
+        { provider, costPerToken: { input: 0.000001, output: 0.000003 } },
+      ],
+    },
   };
 
   return createEngine(engineConfig);
