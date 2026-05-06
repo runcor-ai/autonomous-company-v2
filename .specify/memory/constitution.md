@@ -121,6 +121,8 @@ The operator does not "give the control a fair chance" by adjusting it. Asymmetr
 
 ## How these principles map to enforcement
 
+> **Canonical mapping**: this table is informational and reflects 001-era FR numbering. The current canonical mapping (against feature 002 FR numbers) lives in `specs/002-faithful-rebuild/spec.md` § "Constitutional Alignment". When the two disagree, the spec's table wins.
+
 | Principle | Enforced by |
 |---|---|
 | I — No commercial framing | Spec FR-001 (initial seed), Spec FR-014 (cycle prompt has no commercial language) |

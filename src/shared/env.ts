@@ -79,8 +79,11 @@ export function loadV2Env(): V2Env {
     openrouterApiKey: reqEnv('OPENROUTER_API_KEY'),
     operatorAuthToken: reqEnv('OPERATOR_AUTH_TOKEN'),
     maxCycles: intEnv('MAX_CYCLES', 1000),
-    v2BudgetUsd: intEnv('V2_BUDGET_USD', 100),
-    controlBudgetUsd: intEnv('CONTROL_BUDGET_USD', 100),
+    // Defaults pinned to spec FR-110 + Principle VI ($200 token cap per agent). The repo's
+    // `.env` may override to a smaller cap for smoke runs (e.g., V2_BUDGET_USD=5) — that's
+    // intentional. Don't drift the defaults below 200 again without amending the spec.
+    v2BudgetUsd: intEnv('V2_BUDGET_USD', 200),
+    controlBudgetUsd: intEnv('CONTROL_BUDGET_USD', 200),
     controlIntervalSeconds: intEnv('CONTROL_INTERVAL_SECONDS', 300),
     dashboardHost: optEnv('DASHBOARD_HOST') ?? '0.0.0.0',
     dashboardPort: intEnv('DASHBOARD_PORT', 8080),

@@ -370,7 +370,7 @@ When the experiment ends (any of: 1000 cycles, $200 spend, agent calls `terminat
 
 ## Dependencies
 
-- **5 sibling repos must be cloned before implementation**: `runcor`, `runcor-substrate`, `runcor-memory`, `runcor-data`, `runcor-integration` — into `C:/runcor May 3 2026/` and added to `package.json` as `file:../<name>`. Until all 14 dependencies resolve, no other implementation work begins.
+- **5 sibling repos cloned + integrated as `file:../<name>` deps**: `runcor`, `runcor-substrate`, `runcor-memory`, `runcor-data`, `runcor-integration`. Were missing from `package.json` at spec-creation time; cloned 2026-05-05 and now resolve as local `file:` deps alongside the 9 already-on-disk siblings (per plan.md § "Sibling repo state on disk"). All 14 dependencies must remain resolvable for V2 to boot.
 - **`runcor-temporal.computeNextWake()` may not yet exist**: If absent, it is added to the `runcor-temporal` sibling repo first, shipped, then consumed here. V2 does not reimplement.
 - **`runcor-substrate.installer` monkey-patches the engine's `modelRouter.complete`**: This is the enforcement mechanism for FR-010 + FR-012. Architectural changes to remove the monkey-patch would invalidate the gate.
 - **OpenRouter, Firecrawl, IMAP/SMTP credentials, Git push token**: Inherited from 001 environment. Already present in Railway env; same secrets reused.

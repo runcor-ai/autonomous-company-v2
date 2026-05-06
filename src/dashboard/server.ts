@@ -24,6 +24,8 @@ import { OperatorStore, type OperatorActionKind } from './operator-store.js';
 import { requireBearerToken, extractBearerToken, type RequestHandler } from './auth.js';
 import { blockAgentEgress } from './agent-egress.js';
 import { RaterStore } from '../rater/store.js';
+import { computeDrives } from 'runcor-drives';
+import type { ResourceInputs } from 'runcor-drives';
 
 export interface DashboardArgs {
   bus: EventBus;
@@ -38,6 +40,12 @@ export interface DashboardArgs {
   controlDataCube?: DataCube;
   /** Optional rater store path. When provided, /scores serves real scores. */
   raterDbPath?: string;
+  /** Current cycle accessor for /drives etc. Defaults to 0 if absent. */
+  getCurrentCycle?: () => number;
+  /** Resource-pressure inputs accessor for /drives. Defaults to no resource pressure if absent. */
+  getResourceInputs?: () => ResourceInputs;
+  /** Engine adapter-tool snapshot for /startup-record currentTools (T128). Defaults to []. */
+  getCurrentTools?: () => Array<{ name: string; description: string; adapter?: string }>;
 }
 
 export interface DashboardHandle {
@@ -54,10 +62,6 @@ function jsonResponse(res: ServerResponse, status: number, body: unknown): void 
 
 function notFound(res: ServerResponse): void {
   jsonResponse(res, 404, { error: 'Not found', code: 'not_found' });
-}
-
-function notImplemented(res: ServerResponse, route: string): void {
-  jsonResponse(res, 501, { error: `${route} not implemented yet`, code: 'not_implemented' });
 }
 
 function paramOf(url: URL, key: string): string | null {
@@ -142,7 +146,9 @@ export function startDashboard(args: DashboardArgs): DashboardHandle {
   };
 
   const handleStartupRecord: RequestHandler = (_req, res) => {
-    jsonResponse(res, 200, args.startupRecord);
+    // T128 — extend startup-record with currently-registered tools (refreshes when integration runs).
+    const currentTools = args.getCurrentTools?.() ?? [];
+    jsonResponse(res, 200, { ...args.startupRecord, currentTools });
   };
 
   const handleTranscriptSse: RequestHandler = (req, res) => {
@@ -421,14 +427,47 @@ export function startDashboard(args: DashboardArgs): DashboardHandle {
         return jsonResponse(res, 200, { plan: args.memory.getPlan() });
       }
       if (pathname === '/drives' && method === 'GET') {
-        return notImplemented(res, '/drives');
+        // FR-035 — recompute 4 pressures per request from current memory + temporal state.
+        const role = paramOf(url, 'role') ?? 'v2';
+        const mem = role === 'control' && args.controlMemory ? args.controlMemory : args.memory;
+        const cycle = args.getCurrentCycle?.() ?? 0;
+        const tagSet = new Set<string>();
+        for (const n of mem.getAll()) for (const t of n.tags ?? []) tagSet.add(t);
+        const exploredAreas = Array.from(tagSet);
+        const resourceInputs = args.getResourceInputs?.();
+        const pressure = computeDrives({
+          ...(resourceInputs ? { resource: resourceInputs } : {}),
+          curiosity: { exploredAreas, knownAreas: exploredAreas, recentExplorationCycles: 0 },
+          reactivity: { pendingEvents: [] },
+          coherence: { selfTheoryClaims: [], recentActions: [] },
+        });
+        return jsonResponse(res, 200, {
+          resource: pressure.resource?.intensity ?? 0,
+          curiosity: pressure.curiosity?.intensity ?? 0,
+          reactivity: pressure.reactivity?.intensity ?? 0,
+          coherence: pressure.coherence?.intensity ?? 0,
+          computedAtCycle: cycle,
+        });
       }
       if (pathname === '/watchdog' && method === 'GET') {
         const all = args.memory.getAll().filter((n) => (n.tags ?? []).includes('watchdog_finding'));
         return jsonResponse(res, 200, { findings: all });
       }
       if (pathname === '/coherence' && method === 'GET') {
-        return notImplemented(res, '/coherence');
+        // FR-037 — active tasks (Plan filtered to category 'coherence_task') + open problems (memory
+        // tagged ['coherence_problem','open']) + initiated flows (memory tagged ['coherence_flow']).
+        const role = paramOf(url, 'role') ?? 'v2';
+        const mem = role === 'control' && args.controlMemory ? args.controlMemory : args.memory;
+        const all = mem.getAll();
+        const plan = mem.getPlan();
+        const planItems = (plan?.items ?? []) as Array<{ category?: string; description?: string; id?: string }>;
+        const activeTasks = planItems.filter((it) => typeof it.category === 'string' && it.category === 'coherence_task');
+        const openProblems = all.filter((n) => {
+          const t = n.tags ?? [];
+          return t.includes('coherence_problem') && t.includes('open');
+        });
+        const initiatedFlows = all.filter((n) => (n.tags ?? []).includes('coherence_flow'));
+        return jsonResponse(res, 200, { activeTasks, openProblems, initiatedFlows });
       }
       if (pathname === '/result' && method === 'GET') {
         const role = paramOf(url, 'role') ?? 'v2';

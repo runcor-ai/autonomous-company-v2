@@ -32,6 +32,20 @@ export async function runAgent(): Promise<AgentRunResult> {
     startupRecord: harness.startupRecord,
     terminationState: harness.terminationState,
     operatorDbPath: `${harness.env.agentStateDir}/operator.db`,
+    getCurrentCycle: () => harness.cycleAccessor.get(),
+    getResourceInputs: () => {
+      // /drives recomputes resource pressure each request from current cycle + budget envelope.
+      const cyclesUsed = harness.cycleAccessor.get();
+      const total = harness.env.v2BudgetUsd;
+      const burnPerCycle = total / Math.max(1, harness.env.maxCycles);
+      const remaining = Math.max(0, total - cyclesUsed * burnPerCycle);
+      return { remaining, total, burnPerCycle, cyclesUsed };
+    },
+    getCurrentTools: () => harness.engine.listAdapterTools().map((t) => ({
+      name: t.qualifiedName,
+      description: t.description ?? '',
+      adapter: t.adapterName,
+    })),
   });
 
   // T176: continuous harness-engagement monitor (FR-019g, SC-005).
