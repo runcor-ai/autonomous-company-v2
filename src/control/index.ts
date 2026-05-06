@@ -20,8 +20,9 @@ export interface RunControlOptions {
    *  own bus when omitted (standalone-process mode). */
   sharedBus?: import('../dashboard/event-bus.js').EventBus;
   /** Optional callback invoked once control's harness is booted, so the caller (e.g. V2's runAgent)
-   *  can wire control's memory/dataCube into the dashboard for /memory?role=control panels. */
-  onBooted?: (h: { memory: unknown; dataCube: unknown }) => void;
+   *  can wire control's memory/dataCube/cycleAccessor into the dashboard for /memory?role=control,
+   *  /data?role=control, and /overview?role=control panels. */
+  onBooted?: (h: { memory: unknown; dataCube: unknown; getCycle: () => number }) => void;
 }
 
 export async function runControl(opts: RunControlOptions = {}): Promise<ControlRunResult> {
@@ -29,7 +30,11 @@ export async function runControl(opts: RunControlOptions = {}): Promise<ControlR
   if (!harness.controlConfig) {
     throw new Error('control-config.json not found — control cannot start without the frozen Principle X config');
   }
-  if (opts.onBooted) opts.onBooted({ memory: harness.memory, dataCube: harness.dataCube });
+  if (opts.onBooted) opts.onBooted({
+    memory: harness.memory,
+    dataCube: harness.dataCube,
+    getCycle: () => harness.cycleAccessor.get(),
+  });
   const bus = opts.sharedBus ?? harness.bus;
 
   try {
@@ -52,6 +57,7 @@ export async function runControl(opts: RunControlOptions = {}): Promise<ControlR
       budgetUsd: harness.controlConfig.config.budgetUsd,
       isTerminated: harness.terminationState.isTerminated,
       fixedSleepMs: harness.controlConfig.config.cadenceMs, // FR-105 fixed cadence
+      onCycleAdvance: (c: number) => harness.cycleAccessor.set(c),
     });
     return { cyclesRun: result.cyclesRun, reason: result.reason, totalSpentUsd: result.spentUsd };
   } finally {

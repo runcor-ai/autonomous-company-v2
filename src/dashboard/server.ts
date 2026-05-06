@@ -42,6 +42,8 @@ export interface DashboardArgs {
   raterDbPath?: string;
   /** Current cycle accessor for /drives etc. Defaults to 0 if absent. */
   getCurrentCycle?: () => number;
+  /** Control-process cycle accessor — used by /overview?role=control + /drives?role=control. */
+  getControlCycle?: () => number;
   /** Resource-pressure inputs accessor for /drives. Defaults to no resource pressure if absent. */
   getResourceInputs?: () => ResourceInputs;
   /** Engine adapter-tool snapshot for /startup-record currentTools (T128). Defaults to []. */
@@ -136,17 +138,18 @@ export function startDashboard(args: DashboardArgs): DashboardHandle {
     args.bus.on(ev, fn);
   }
 
-  // Lightweight overview state — accumulated from bus events for the V2 process.
-  // Control runs in a separate process (per main.ts dispatcher), so its overview
-  // currently shows env-derived budget + zeros for runtime-tracked fields.
-  let overviewSpentUsd = 0;
-  let overviewLastCycleAt: number | null = null;
+  // Per-role overview state — accumulated from bus events tagged with agentRole.
+  // V2 and control share this bus when co-run (agent/index.ts wires both).
+  const overviewSpent: Record<string, number> = { v2: 0, control: 0 };
+  const overviewLastCycleAt: Record<string, number | null> = { v2: null, control: null };
   args.bus.on('cost_request', (ev: Record<string, unknown>) => {
+    const role = typeof ev.agentRole === 'string' ? ev.agentRole : 'v2';
     const cost = typeof ev.cost === 'number' ? ev.cost : 0;
-    if (cost > 0) overviewSpentUsd += cost;
+    if (cost > 0) overviewSpent[role] = (overviewSpent[role] ?? 0) + cost;
   });
-  args.bus.on('cycle_record', (_ev: Record<string, unknown>) => {
-    overviewLastCycleAt = Date.now();
+  args.bus.on('cycle_record', (ev: Record<string, unknown>) => {
+    const role = typeof ev.agentRole === 'string' ? ev.agentRole : 'v2';
+    overviewLastCycleAt[role] = Date.now();
   });
 
   const handleOverview: RequestHandler = (req, res) => {
@@ -158,16 +161,19 @@ export function startDashboard(args: DashboardArgs): DashboardHandle {
       .getAll()
       .filter((n) => Array.isArray(n.tags) && n.tags.includes('daily_summary'))
       .length;
-    const lastCycleAt = isV2 ? overviewLastCycleAt : null;
+    const lastCycleAt = overviewLastCycleAt[role] ?? null;
     const lastCycleStatus = lastCycleAt
       ? new Date(lastCycleAt).toISOString().slice(11, 19) + ' UTC'
       : '—';
+    const cycleCount = isV2
+      ? (args.getCurrentCycle?.() ?? 0)
+      : (args.getControlCycle?.() ?? 0);
     jsonResponse(res, 200, {
       role,
-      cycleCount: isV2 && args.getCurrentCycle ? args.getCurrentCycle() : 0,
+      cycleCount,
       lastCycleAt,
       lastCycleStatus,
-      spentUsd: isV2 ? overviewSpentUsd : 0,
+      spentUsd: overviewSpent[role] ?? 0,
       capUsd: isV2 ? args.env.v2BudgetUsd : args.env.controlBudgetUsd,
       budgetUsd: isV2 ? args.env.v2BudgetUsd : args.env.controlBudgetUsd,
       summariesPublished,

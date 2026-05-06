@@ -74,6 +74,10 @@ export interface RunCyclesArgs {
   startCycle?: number;
   /** Test/dev sleep override. */
   sleep?: (ms: number) => Promise<void>;
+  /** Optional callback fired after each cycle's `cycle` counter advances. Used by the
+   *  agent runner to keep `harness.cycleAccessor` in sync so dashboard panels (drives,
+   *  overview, harness monitor) see the live cycle number. */
+  onCycleAdvance?: (cycle: number) => void;
 }
 
 const DEFAULT_SLEEP = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -289,6 +293,7 @@ export async function runCycles(args: RunCyclesArgs): Promise<{ cyclesRun: numbe
       }
 
       cycle += 1;
+      args.onCycleAdvance?.(cycle);
       if (cycle >= args.maxCycles) break;
       if (args.isTerminated()) break;
       if (spentUsd >= args.budgetUsd) break;

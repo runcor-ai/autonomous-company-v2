@@ -27,11 +27,13 @@ export interface AgentRunResult {
 export async function runAgent(): Promise<AgentRunResult> {
   const harness: BootedHarness = await boot({ agentRole: 'v2' });
 
-  // Mutable handles for control's memory + dataCube — populated when control boots.
-  // Dashboard reads these via getter closures so /memory?role=control + /data?role=control
-  // start returning real data the moment control's boot completes.
+  // Mutable handles for control's memory + dataCube + cycle accessor — populated when
+  // control boots. Dashboard reads these via getter closures so /memory?role=control,
+  // /data?role=control, and /overview?role=control start returning real data the moment
+  // control's boot completes.
   let controlMemory: MemorySystem | undefined;
   let controlDataCube: DataCube | undefined;
+  let controlGetCycle: (() => number) | undefined;
 
   const dashboard = startDashboard({
     bus: harness.bus,
@@ -40,6 +42,7 @@ export async function runAgent(): Promise<AgentRunResult> {
     dataCube: harness.dataCube,
     get controlMemory() { return controlMemory; },
     get controlDataCube() { return controlDataCube; },
+    getControlCycle: () => controlGetCycle?.() ?? 0,
     startupRecord: harness.startupRecord,
     terminationState: harness.terminationState,
     operatorDbPath: `${harness.env.agentStateDir}/operator.db`,
@@ -64,9 +67,10 @@ export async function runAgent(): Promise<AgentRunResult> {
   // but do NOT terminate V2 — control is observational. Fire-and-forget intentionally.
   void runControl({
     sharedBus: harness.bus,
-    onBooted: ({ memory, dataCube }) => {
+    onBooted: ({ memory, dataCube, getCycle }) => {
       controlMemory = memory as MemorySystem;
       controlDataCube = dataCube as DataCube;
+      controlGetCycle = getCycle;
       console.log('[v2] control co-process booted; dashboard will surface its state');
     },
   }).catch((err: unknown) => {
@@ -103,6 +107,7 @@ export async function runAgent(): Promise<AgentRunResult> {
       maxCycles: harness.env.maxCycles,
       budgetUsd: harness.env.v2BudgetUsd,
       isTerminated: harness.terminationState.isTerminated,
+      onCycleAdvance: (c: number) => harness.cycleAccessor.set(c),
     });
 
     // FR-110, FR-120, FR-121: generate + publish result.md regardless of outcome.
