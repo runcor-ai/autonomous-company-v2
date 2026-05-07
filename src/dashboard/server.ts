@@ -40,6 +40,13 @@ export interface DashboardArgs {
   controlDataCube?: DataCube;
   /** Optional rater store path. When provided, /scores serves real scores. */
   raterDbPath?: string;
+  /** Harness components — used by /goals, /identity, /coherence so the dashboard
+   *  reads from the live component (which holds the canonical state) instead of
+   *  trying to fish data out of runcor-memory after the fact. */
+  goals?: import('runcor-goals').Goals;
+  identity?: import('runcor-identity').Identity;
+  coherence?: import('runcor-coherence').Coherence;
+  watchdog?: { audit(input: unknown): Promise<unknown[]> };
   /** Current cycle accessor for /drives etc. Defaults to 0 if absent. */
   getCurrentCycle?: () => number;
   /** Control-process cycle accessor — used by /overview?role=control + /drives?role=control. */
@@ -605,11 +612,50 @@ export function startDashboard(args: DashboardArgs): DashboardHandle {
 
       // Identity / goals / drives / watchdog / coherence — thin reads for v0.1.
       if (pathname === '/identity' && method === 'GET') {
+        if (args.identity) {
+          const current = args.identity.current();
+          const block = args.identity.renderBlock();
+          const history = args.identity.history(5);
+          return jsonResponse(res, 200, {
+            current,
+            block,
+            history: history.map((s) => ({
+              version: s.version,
+              lastReflectedCycle: s.lastReflectedCycle,
+              claims: s.claims,
+              traits: s.traits,
+            })),
+          });
+        }
+        // Fallback if identity component wasn't wired
         const all = args.memory.getAll().filter((n) => (n.tags ?? []).includes('identity_snapshot'));
         return jsonResponse(res, 200, { snapshots: all.map((n) => ({ content: n.content, tags: n.tags, M: n.M })) });
       }
       if (pathname === '/goals' && method === 'GET') {
+        if (args.goals) {
+          const cycle = args.getCurrentCycle?.() ?? 0;
+          const active = args.goals.active();
+          const stack = args.goals.stack(cycle);
+          const block = args.goals.renderBlock(cycle);
+          return jsonResponse(res, 200, { active, stack, block });
+        }
         return jsonResponse(res, 200, { plan: args.memory.getPlan() });
+      }
+      if (pathname === '/coherence' && method === 'GET') {
+        if (args.coherence) {
+          const engines = args.coherence.registeredEngines();
+          // Run a fresh detection on the current state — cheap, no LLM call.
+          let problems: unknown[] = [];
+          try {
+            problems = await args.coherence.detect({});
+          } catch (_e) { /* tolerate detect errors */ }
+          return jsonResponse(res, 200, {
+            registeredEngines: engines.map((e: { id: string; capabilities?: string[] }) => ({ id: e.id, capabilities: e.capabilities ?? [] })),
+            problems,
+            problemCount: Array.isArray(problems) ? problems.length : 0,
+          });
+        }
+        return jsonResponse(res, 200, { registeredEngines: [], problems: [], problemCount: 0 });
       }
       if (pathname === '/drives' && method === 'GET') {
         // FR-035 — recompute 4 pressures per request from real signals in memory.
@@ -706,22 +752,6 @@ export function startDashboard(args: DashboardArgs): DashboardHandle {
       if (pathname === '/watchdog' && method === 'GET') {
         const all = args.memory.getAll().filter((n) => (n.tags ?? []).includes('watchdog_finding'));
         return jsonResponse(res, 200, { findings: all });
-      }
-      if (pathname === '/coherence' && method === 'GET') {
-        // FR-037 — active tasks (Plan filtered to category 'coherence_task') + open problems (memory
-        // tagged ['coherence_problem','open']) + initiated flows (memory tagged ['coherence_flow']).
-        const role = paramOf(url, 'role') ?? 'v2';
-        const mem = role === 'control' && args.controlMemory ? args.controlMemory : args.memory;
-        const all = mem.getAll();
-        const plan = mem.getPlan();
-        const planItems = (plan?.items ?? []) as Array<{ category?: string; description?: string; id?: string }>;
-        const activeTasks = planItems.filter((it) => typeof it.category === 'string' && it.category === 'coherence_task');
-        const openProblems = all.filter((n) => {
-          const t = n.tags ?? [];
-          return t.includes('coherence_problem') && t.includes('open');
-        });
-        const initiatedFlows = all.filter((n) => (n.tags ?? []).includes('coherence_flow'));
-        return jsonResponse(res, 200, { activeTasks, openProblems, initiatedFlows });
       }
       if (pathname === '/result' && method === 'GET') {
         const role = paramOf(url, 'role') ?? 'v2';

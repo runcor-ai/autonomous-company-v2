@@ -36,12 +36,10 @@ function renderOverview(elId, ov) {
 function formatDrives(d) {
   if (!d || d.error) return d?.error ?? 'no data';
   const drives = ['resource', 'curiosity', 'reactivity', 'coherence'];
-  const max = Math.max(...drives.map((k) => d[k] ?? 0));
   const lines = drives.map((k) => {
     const v = d[k] ?? 0;
     const bars = '█'.repeat(Math.round(v * 20)).padEnd(20, '·');
-    const tag = v === max && v > 0 ? '  ← strongest' : '';
-    return `${k.padEnd(11)} ${v.toFixed(2)}  ${bars}${tag}`;
+    return `${k.padEnd(11)} ${v.toFixed(2)}  ${bars}`;
   });
   lines.push('');
   lines.push(`computed at cycle ${d.computedAtCycle ?? '—'}`);
@@ -50,51 +48,89 @@ function formatDrives(d) {
 
 function formatIdentity(d) {
   if (!d || d.error) return d?.error ?? 'no data';
+  // Live shape from runcor-identity component (current + history).
+  if (d.current) {
+    const c = d.current;
+    const lines = [
+      `Self-theory v${c.version} (last reflected cycle ${c.lastReflectedCycle ?? 0})`,
+    ];
+    const claims = c.claims ?? [];
+    if (claims.length > 0) {
+      lines.push('');
+      lines.push('Claims:');
+      claims.slice(0, 6).forEach((cl) => lines.push(`  • ${cl}`));
+    }
+    const traits = c.traits ?? {};
+    const traitKeys = Object.keys(traits);
+    if (traitKeys.length > 0) {
+      lines.push('');
+      lines.push('Traits:');
+      traitKeys.slice(0, 8).forEach((k) => lines.push(`  ${k.padEnd(14)} ${(+traits[k]).toFixed(2)}`));
+    }
+    if (claims.length === 0 && traitKeys.length === 0) {
+      lines.push('');
+      lines.push('(no claims or traits yet — first reflection has not produced content)');
+    }
+    return lines.join('\n');
+  }
+  // Legacy fallback shape (snapshot list).
   const snaps = d.snapshots ?? [];
   if (snaps.length === 0) return 'No identity reflections yet — the agent has not formed a self-theory.';
-  return snaps.slice(0, 3).map((s) => {
-    const ver = (s.tags ?? []).find((t) => t.startsWith('version:'))?.replace('version:', '') ?? '?';
-    const content = String(s.content ?? '').trim();
-    return `Self-theory v${ver}\n${content}`;
-  }).join('\n\n---\n\n');
+  return snaps.slice(0, 1).map((s) => String(s.content ?? '').trim()).join('\n');
 }
 
 function formatGoals(d) {
   if (!d || d.error) return d?.error ?? 'no data';
-  if (!d.plan) return 'No goals proposed yet — the agent has not articulated a plan.';
+  // Live shape from runcor-goals component.
+  if (Array.isArray(d.active)) {
+    if (d.active.length === 0) return 'No active goals — periodic propose() calls have not produced accepted goals yet.';
+    const lines = [];
+    if (d.stack?.dominantGoalId != null) {
+      lines.push(`Dominant goal id: ${d.stack.dominantGoalId} (intensity ${(+d.stack.maxIntensity || 0).toFixed(2)})`);
+      lines.push('');
+    }
+    d.active.slice(0, 8).forEach((g) => {
+      const lvl = g.level ? `[${g.level}]` : '';
+      const intensity = typeof g.intensity === 'number' ? ` (i=${g.intensity.toFixed(2)})` : '';
+      lines.push(`${lvl} #${g.id}${intensity} — ${g.statement ?? g.description ?? '(no text)'}`);
+    });
+    return lines.join('\n');
+  }
+  // Legacy fallback (plan).
+  if (!d.plan) return 'No goals proposed yet.';
   const items = d.plan.items ?? [];
-  if (items.length === 0) return 'Plan exists but is empty.';
-  const strategy = d.plan.strategy ? `Strategy: ${d.plan.strategy}\n\n` : '';
-  const itemLines = items.slice(0, 8).map((i) => {
-    const status = `[${(i.status ?? '?').padEnd(8)}]`;
-    return `${status} ${i.text ?? ''}`;
-  });
-  return strategy + itemLines.join('\n');
+  return items.length === 0 ? 'Plan exists but is empty.' : items.slice(0, 8).map((i) => `[${i.status}] ${i.text ?? ''}`).join('\n');
 }
 
 function formatCoherence(d) {
   if (!d || d.error) return d?.error ?? 'no data';
+  // Live shape from runcor-coherence component.
+  if (Array.isArray(d.problems) || Array.isArray(d.registeredEngines)) {
+    const engines = d.registeredEngines ?? [];
+    const problems = d.problems ?? [];
+    const lines = [
+      `${engines.length} registered engine${engines.length === 1 ? '' : 's'}`,
+      `${problems.length} detected problem${problems.length === 1 ? '' : 's'}`,
+    ];
+    if (problems.length === 0 && engines.length === 0) {
+      lines.push('');
+      lines.push('(coherence component idle — no engines registered, no problems detected)');
+    }
+    if (problems.length > 0) {
+      lines.push('');
+      lines.push('Problems:');
+      problems.slice(0, 4).forEach((p) => {
+        const desc = p.description ?? p.problem ?? p.summary ?? JSON.stringify(p).slice(0, 100);
+        lines.push(`  • ${desc}`);
+      });
+    }
+    return lines.join('\n');
+  }
+  // Legacy fallback shape.
   const at = (d.activeTasks ?? []).length;
   const op = (d.openProblems ?? []).length;
   const fl = (d.initiatedFlows ?? []).length;
-  const lines = [
-    `${at} active task${at === 1 ? '' : 's'}`,
-    `${op} open problem${op === 1 ? '' : 's'}`,
-    `${fl} initiated flow${fl === 1 ? '' : 's'}`,
-  ];
-  if (at === 0 && op === 0 && fl === 0) {
-    lines.push('');
-    lines.push('(coherence has not detected anything to work on yet)');
-  }
-  // Append details if any exist
-  if (op > 0) {
-    lines.push('');
-    lines.push('Open problems:');
-    (d.openProblems ?? []).slice(0, 3).forEach((p) => {
-      lines.push(`  • ${p.problem ?? p.summary ?? JSON.stringify(p).slice(0, 80)}`);
-    });
-  }
-  return lines.join('\n');
+  return `${at} active · ${op} problems · ${fl} flows`;
 }
 
 function formatWatchdog(d) {
