@@ -139,11 +139,23 @@ function formatWatchdog(d) {
   if (!d || d.error) return d?.error ?? 'no data';
   const findings = d.findings ?? [];
   if (findings.length === 0) return 'No watchdog findings — the agent has not exhibited any flagged patterns.';
-  return findings.slice(0, 5).map((f) => {
-    const cat = f.category ?? '?';
-    const cap = f.capability ? ` [${f.capability}]` : '';
-    const problem = f.problem ?? f.summary ?? '';
-    return `${cat}${cap}\n  ${problem}`;
+  // Findings come from memory.getAll() filter — each is a MemoryNode with `content`
+  // (a pre-formatted string: "Watchdog: <category> — <problem> (capability: <cap>). Validated: <bool>.")
+  // Parse the content to extract category, problem, capability for cleaner rendering.
+  return findings.slice(0, 8).map((f) => {
+    if (typeof f.category === 'string') {
+      // Already-structured shape (forward-compat).
+      const cap = f.capability ? ` [${f.capability}]` : '';
+      return `${f.category}${cap}\n  ${f.problem ?? f.summary ?? ''}`;
+    }
+    const content = String(f.content ?? '').replace(/^Watchdog:\s*/, '');
+    const m = content.match(/^([\w-]+)\s+[—\-]\s+(.+?)\s+\(capability:\s*([^)]+)\)\.\s*Validated:\s*(\w+)\.?$/);
+    if (m) {
+      const [, category, problem, capability, validated] = m;
+      const valTag = validated === 'true' ? '✓' : '~';
+      return `${category} [${capability}] ${valTag}\n  ${problem}`;
+    }
+    return content || '(unparseable finding)';
   }).join('\n\n');
 }
 
