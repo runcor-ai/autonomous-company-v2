@@ -495,19 +495,17 @@ export function startDashboard(args: DashboardArgs): DashboardHandle {
   const handleScoreSummary: RequestHandler = (req, res) => {
     const url = new URL(req.url ?? '', 'http://x');
     const role = paramOf(url, 'role') === 'control' ? 'control' : 'v2';
-    const chunks = (args.summaryStore?.listScoreChunks(role) ?? [])
-      .sort((a, b) => b.endCycle - a.endCycle);
-    const sections: string[] = [];
-    for (const c of chunks.slice(0, 10)) {
-      sections.push(`## Cycles ${c.startCycle}..${c.endCycle} (mean ${c.meanScore.toFixed(2)})\n\n${c.content}`);
-    }
-    const summary = sections.length > 0
-      ? sections.join('\n\n---\n\n')
-      : '_No score summary yet — first chunk after 5 scores have been recorded for this role._';
+    // Single rolling overall summary — read the latest (and only) chunk.
+    const chunks = args.summaryStore?.listScoreChunks(role) ?? [];
+    const latest = chunks.length > 0 ? chunks[chunks.length - 1] : null;
+    const summary = latest
+      ? latest.content
+      : '_No score summary yet — first overall summary after the first scoring round._';
     jsonResponse(res, 200, {
       role, summary,
-      chunkCount: chunks.length,
-      lastEndCycle: chunks.length > 0 && chunks[0] ? chunks[0].endCycle : 0,
+      lastEndCycle: latest?.endCycle ?? 0,
+      scoreCount: latest?.scoreCount ?? 0,
+      meanScore: latest?.meanScore ?? null,
       generatedAt: new Date().toISOString(),
     });
   };

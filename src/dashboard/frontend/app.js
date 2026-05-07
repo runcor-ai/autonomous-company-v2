@@ -195,26 +195,27 @@ function drawChart(perSummary) {
 }
 
 async function refreshScores() {
-  // /scores is now PUBLIC (Constitution Principle III). No auth header needed.
+  // /scores returns { v2: [...scores...], control: [...scores...] }.
+  // Plot only the last 5 scores per role on the chart.
   const data = await fetchJson('/scores');
   if (data?.error) {
     drawChart([]);
     $('current-score').textContent = `(${data.error})`;
     return;
   }
-  drawChart(data.perSummary ?? []);
-  if (data.currentScore) {
-    const pct = ((data.currentScore.score + 1) / 2) * 100;
-    $('spectrum-marker').style.left = pct + '%';
-    const label = $('spectrum-score-label');
-    if (label) {
-      label.textContent = (data.currentScore.score >= 0 ? '+' : '') + data.currentScore.score.toFixed(2);
-      label.style.left = pct + '%';
-    }
-    $('current-score').textContent = `latest: ${data.currentScore.score.toFixed(2)} (${data.currentScore.raterModel})`;
-  } else {
-    $('current-score').textContent = '(no scored summaries yet)';
-  }
+  const v2 = (data.v2 ?? []).slice(0, 5).reverse(); // newest at right
+  const ctrl = (data.control ?? []).slice(0, 5).reverse();
+  const merged = [
+    ...v2.map((s) => ({ kind: 'v2', score: s.score })),
+    ...ctrl.map((s) => ({ kind: 'control', score: s.score })),
+  ];
+  drawChart(merged);
+  const latestV2 = (data.v2 ?? [])[0];
+  const latestCtrl = (data.control ?? [])[0];
+  const parts = [];
+  if (latestV2) parts.push(`V2 latest: ${latestV2.score >= 0 ? '+' : ''}${latestV2.score.toFixed(2)} @ cycle ${latestV2.dayNumber}`);
+  if (latestCtrl) parts.push(`control latest: ${latestCtrl.score >= 0 ? '+' : ''}${latestCtrl.score.toFixed(2)} @ cycle ${latestCtrl.dayNumber}`);
+  $('current-score').textContent = parts.length > 0 ? parts.join(' · ') : '(no scored summaries yet)';
 }
 
 // ── hypotheses (emergence-claim evaluations) ──
@@ -228,7 +229,13 @@ async function refreshHypotheses() {
     const e = h.latest;
     const status = e?.status ?? 'pending';
     const conf = e?.confidence != null ? `${(e.confidence * 100).toFixed(0)}%` : '—';
-    const at = e?.evaluatedAt ? `cycle ${e.evaluatedAtV2Cycle} · ${e.evaluatedAt.slice(11, 19)} UTC` : 'not yet evaluated';
+    const at = e?.evaluatedAt
+      ? (() => {
+          const ts = typeof e.evaluatedAt === 'number' ? new Date(e.evaluatedAt).toISOString() : String(e.evaluatedAt);
+          const cyc = e.evaluatedAtV2Cycle != null ? `cycle ${e.evaluatedAtV2Cycle} · ` : '';
+          return `${cyc}${ts.slice(11, 19)} UTC`;
+        })()
+      : 'not yet evaluated';
     const statusClass = `hyp-status-${status.replace(/[^a-z-]/g, '')}`;
     const description = `<details><summary class="hyp-desc-summary">definition</summary><div class="hyp-desc">${escapeHtml(h.description)}</div></details>`;
     const evalBody = e
@@ -273,11 +280,17 @@ function renderScoreSummary(kind, data) {
     if (meta) meta.textContent = '';
     return;
   }
-  body.innerHTML = md(data.summary || '_No score summary yet — first chunk after 5 scores._');
+  body.innerHTML = md(data.summary || '_No score summary yet — first overall summary after the first scoring round._');
   if (meta) {
     const lastEnd = data.lastEndCycle ?? 0;
-    const count = data.chunkCount ?? 0;
-    meta.textContent = lastEnd > 0 ? `${count} chunk${count === 1 ? '' : 's'} · through cycle ${lastEnd}` : '';
+    const count = data.scoreCount ?? 0;
+    const mean = data.meanScore;
+    if (lastEnd > 0 && count > 0) {
+      const meanPart = typeof mean === 'number' ? ` · mean ${mean >= 0 ? '+' : ''}${mean.toFixed(2)}` : '';
+      meta.textContent = `${count} score${count === 1 ? '' : 's'} · through cycle ${lastEnd}${meanPart}`;
+    } else {
+      meta.textContent = '';
+    }
   }
 }
 

@@ -66,12 +66,11 @@ export class SummaryStore {
     return Math.max(...chunks.map((c) => c.endCycle));
   }
 
-  // ── Score chunks (parallel storage, same JSON file) ─────────────────────
+  // Score storage = single rolling "overall" chunk per role (not a growing list).
+  // Each new generation incorporates the prior chunk as memory and replaces it.
   addScoreChunk(role: 'v2' | 'control', chunk: ScoreChunk): void {
     const key = role === 'v2' ? 'scoresV2' : 'scoresControl';
-    this.data[key] = this.data[key] ?? [];
-    this.data[key] = this.data[key]!.filter((c) => c.endCycle !== chunk.endCycle);
-    this.data[key]!.push(chunk);
+    this.data[key] = [chunk];
     this.save();
   }
 
