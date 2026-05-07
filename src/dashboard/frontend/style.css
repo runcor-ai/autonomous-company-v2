@@ -66,7 +66,7 @@ footer a:hover { color: var(--text); }
 .summary-v2 { border-left-color: var(--v2); }
 .summary-control { border-left-color: var(--ctrl); }
 .summary-panel header { display: flex; align-items: center; gap: 0.6rem; padding-bottom: 0.6rem; border-bottom: 1px solid var(--border); margin-bottom: 0.7rem; font-size: 11px; font-family: monospace; }
-.summary-body { font-size: 14px; line-height: 1.6; color: var(--text2); min-height: 90px; }
+.summary-body { font-size: 14px; line-height: 1.6; color: var(--text2); min-height: 90px; max-height: 540px; overflow-y: auto; padding-right: 0.5rem; }
 .summary-body p { margin: 0.4rem 0; }
 .summary-body p:first-child { margin-top: 0; }
 .summary-body p:last-child { margin-bottom: 0; }
