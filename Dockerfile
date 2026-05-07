@@ -50,6 +50,11 @@ RUN npm run build
 RUN mkdir -p /app/agent-state
 ENV DB_PATH=/app/agent-state/experiment.db
 ENV HARNESS_DB_DIR=/app/agent-state
+# CRITICAL — agentStateDir defaults to ./agent-state (in the container's working dir,
+# which is wiped on every redeploy). Pinning to /app/agent-state puts memory, rater
+# scores, dashboard summaries, hypothesis evals, and cycle state on the persistent
+# Railway volume. Without this every push silently resets the experiment.
+ENV AGENT_STATE_DIR=/app/agent-state
 ENV DASHBOARD_HOST=0.0.0.0
 ENV DASHBOARD_PORT=8080
 
