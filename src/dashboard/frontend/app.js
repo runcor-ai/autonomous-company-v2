@@ -410,7 +410,7 @@ const escapeHtml = (s) => s.replace(/[&<>"']/g, (c) =>
 // V2-002 transcript: bus events grouped by (agentRole, cycle). Each cycle shows the
 // events that fired during it (prompt_assembled, discernment, cost_request, etc).
 
-const TRANSCRIPT_LIMIT = 200;
+const TRANSCRIPT_LIMIT = 5000; // matches server cap (≈ 570 cycles of history per role)
 let renderScheduled = false;
 
 // Parse model output text — usually JSON {action, args, reasoning} but may be plain markdown.
@@ -505,13 +505,13 @@ function renderTranscript() {
       ? `<div class="muted">no ${role} events yet</div>`
       : cycles.map(([c, evs]) => renderCycleBlock(role, c, evs)).join('');
     const countEl = $(`${role}-transcript-count`);
-    if (countEl) countEl.textContent = `${cycles.length} cycles`;
+    if (countEl) countEl.textContent = `${cycles.length} cycles in buffer`;
   }
   const statusEl = $('transcript-status');
   if (statusEl) {
     const v2Count = byRole.v2.size;
     const ctrlCount = byRole.control.size;
-    statusEl.textContent = `(${v2Count} V2 + ${ctrlCount} control)`;
+    statusEl.textContent = `(buffer: ${v2Count} V2 + ${ctrlCount} control cycles — older history evicted from ring)`;
   }
 }
 

@@ -99,7 +99,7 @@ export function loadV2Env(): V2Env {
     agentStateDir: optEnv('AGENT_STATE_DIR') ?? './agent-state',
     scratchpadDir: optEnv('SCRATCHPAD_DIR') ?? './agent-state/scratchpad',
     harnessMonitorIntervalCycles: intEnv('HARNESS_MONITOR_INTERVAL_CYCLES', 100),
-    cycleRecordBufferSize: intEnv('CYCLE_RECORD_BUFFER_SIZE', 200),
+    cycleRecordBufferSize: intEnv('CYCLE_RECORD_BUFFER_SIZE', 1000),
     resetOnBoot: boolEnv('RESET_ON_BOOT'),
   };
 

@@ -250,7 +250,11 @@ export function startDashboard(args: DashboardArgs): DashboardHandle {
   const handleTranscriptHistory: RequestHandler = (req, res) => {
     const url = new URL(req.url ?? '', 'http://x');
     const after = parseInt(paramOf(url, 'after') ?? '0', 10);
-    const limit = Math.min(500, Math.max(1, parseInt(paramOf(url, 'limit') ?? '100', 10)));
+    // Cap matches the EventBus bufferSize (1000) so the frontend can pull the
+    // entire ring on load.
+    // Cap matches 4× the cycleRecordBufferSize default (1000 → bus holds 4000 events,
+     // ≈ 570 cycles of history per role).
+    const limit = Math.min(5000, Math.max(1, parseInt(paramOf(url, 'limit') ?? '100', 10)));
     const events = args.bus.snapshotAfter(Number.isFinite(after) ? after : 0).slice(0, limit);
     jsonResponse(res, 200, { events });
   };
