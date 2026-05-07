@@ -115,7 +115,7 @@ async function refreshScores() {
 
 // ── hypotheses (emergence-claim evaluations) ──
 async function refreshHypotheses() {
-  const data = await fetchJson('/hypotheses');
+  const data = await fetchJson('/hypothesis');
   if (!Array.isArray(data)) {
     $('hypotheses').innerHTML = `<div class="muted">${data?.error ?? 'no data'}</div>`;
     return;

@@ -622,7 +622,7 @@ export function startDashboard(args: DashboardArgs): DashboardHandle {
         }
         return;
       }
-      if (pathname === '/hypothesis' && method === 'GET') return handleHypothesis(req, res);
+      if ((pathname === '/hypothesis' || pathname === '/hypotheses') && method === 'GET') return handleHypothesis(req, res);
       if (pathname === '/rater' && method === 'GET') {
         // /rater is the rubric-info endpoint; /scores is the rated-output endpoint.
         const { rubricHash, RUBRIC_VERSION } = await import('../rater/rubric.js');
