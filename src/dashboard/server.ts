@@ -492,6 +492,26 @@ export function startDashboard(args: DashboardArgs): DashboardHandle {
     jsonResponse(res, 200, { v2, control });
   };
 
+  const handleScoreSummary: RequestHandler = (req, res) => {
+    const url = new URL(req.url ?? '', 'http://x');
+    const role = paramOf(url, 'role') === 'control' ? 'control' : 'v2';
+    const chunks = (args.summaryStore?.listScoreChunks(role) ?? [])
+      .sort((a, b) => b.endCycle - a.endCycle);
+    const sections: string[] = [];
+    for (const c of chunks.slice(0, 10)) {
+      sections.push(`## Cycles ${c.startCycle}..${c.endCycle} (mean ${c.meanScore.toFixed(2)})\n\n${c.content}`);
+    }
+    const summary = sections.length > 0
+      ? sections.join('\n\n---\n\n')
+      : '_No score summary yet — first chunk after 5 scores have been recorded for this role._';
+    jsonResponse(res, 200, {
+      role, summary,
+      chunkCount: chunks.length,
+      lastEndCycle: chunks.length > 0 && chunks[0] ? chunks[0].endCycle : 0,
+      generatedAt: new Date().toISOString(),
+    });
+  };
+
   const handleHypothesis: RequestHandler = async (_req, res) => {
     // The frontend renders one card per seed hypothesis with the most recent
     // evaluation embedded as `latest`. Returns an Array<{ id, title, description,
@@ -568,6 +588,7 @@ export function startDashboard(args: DashboardArgs): DashboardHandle {
       if (pathname === '/blog' && method === 'GET') return handleBlog(req, res);
       if (pathname === '/summaries' && method === 'GET') return handleBlog(req, res);
       if (pathname === '/cycle-summary' && method === 'GET') return handleCycleSummary(req, res);
+      if (pathname === '/score-summary' && method === 'GET') return handleScoreSummary(req, res);
       if (pathname === '/scores' && method === 'GET') {
         // Public read per Principle III (transparency). Agent-egress filter still
         // blocks the agent's own process from reading its scores (FR-039).

@@ -15,9 +15,25 @@ export interface SummaryChunk {
   createdAt: number;
 }
 
+/** Periodic narrative summary of the harm↔benevolent score trend. Generated alongside
+ *  cycle summaries (every 5 cycles per role). Stored separately so reads/writes don't
+ *  conflict with cycle-summary chunks. */
+export interface ScoreChunk {
+  startCycle: number;
+  endCycle: number;
+  meanScore: number;
+  minScore: number;
+  maxScore: number;
+  scoreCount: number;
+  content: string;        // LLM-paraphrased trend narrative
+  createdAt: number;
+}
+
 interface StoreShape {
   v2: SummaryChunk[];
   control: SummaryChunk[];
+  scoresV2?: ScoreChunk[];
+  scoresControl?: ScoreChunk[];
 }
 
 export class SummaryStore {
@@ -43,12 +59,25 @@ export class SummaryStore {
     return [...(this.data[role] ?? [])];
   }
 
-  /** Last cycle covered by ANY L1 chunk for this role (so the generator knows
-   *  whether the next 20-cycle window has already been summarized). */
+  /** Last cycle covered by ANY L1 chunk for this role. */
   lastCoveredEnd(role: 'v2' | 'control', tier: 'L1' | 'L2' | 'L3' = 'L1'): number {
     const chunks = (this.data[role] ?? []).filter((c) => c.tier === tier);
     if (chunks.length === 0) return -1;
     return Math.max(...chunks.map((c) => c.endCycle));
+  }
+
+  // ── Score chunks (parallel storage, same JSON file) ─────────────────────
+  addScoreChunk(role: 'v2' | 'control', chunk: ScoreChunk): void {
+    const key = role === 'v2' ? 'scoresV2' : 'scoresControl';
+    this.data[key] = this.data[key] ?? [];
+    this.data[key] = this.data[key]!.filter((c) => c.endCycle !== chunk.endCycle);
+    this.data[key]!.push(chunk);
+    this.save();
+  }
+
+  listScoreChunks(role: 'v2' | 'control'): ScoreChunk[] {
+    const key = role === 'v2' ? 'scoresV2' : 'scoresControl';
+    return [...(this.data[key] ?? [])];
   }
 
   private load(): StoreShape {

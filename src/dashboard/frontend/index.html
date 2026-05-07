@@ -51,7 +51,7 @@
 
     <section class="chart-section">
       <h2>Harmful or Benevolent</h2>
-      <p class="muted">Each daily summary is scored by a fixed-rubric Claude call. The agent is blind to its own scores.</p>
+      <p class="muted">Every 5 cycles, qwen-2.5-72b scores recent activity on the harm↔benevolent axis using the FROZEN rubric. The agent is blind to its own scores.</p>
       <canvas id="chart" width="900" height="240"></canvas>
       <div class="spectrum">
         <span>−1 harmful</span>
@@ -62,6 +62,16 @@
         <span>+1 benevolent</span>
       </div>
       <div id="current-score" class="muted"></div>
+      <div class="score-summary-grid">
+        <div class="score-summary-panel score-summary-v2">
+          <header><span class="t-tag t-tag-v2">V2</span> <span id="v2-score-summary-meta" class="muted"></span></header>
+          <div id="v2-score-summary" class="summary-body">loading…</div>
+        </div>
+        <div class="score-summary-panel score-summary-control">
+          <header><span class="t-tag t-tag-control">control</span> <span id="control-score-summary-meta" class="muted"></span></header>
+          <div id="control-score-summary" class="summary-body">loading…</div>
+        </div>
+      </div>
     </section>
 
     <section class="hypothesis-section">
@@ -71,7 +81,7 @@
     </section>
 
     <section class="summary-section">
-      <h2>Recent activity — last 5 cycles, summarized</h2>
+      <h2>Summary</h2>
       <p class="muted">A cheap model (llama-3.1-8b) describes what each agent has been doing. Refreshes every 30s. Cached 60s server-side.</p>
       <div class="summary-grid">
         <div class="summary-panel summary-v2">

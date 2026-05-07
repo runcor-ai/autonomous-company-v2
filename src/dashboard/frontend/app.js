@@ -250,8 +250,38 @@ async function refreshHypotheses() {
   $('hypotheses').innerHTML = cards;
 }
 
-// ── cycle summaries (V2-002: derived from /cycle-summary which synthesizes recent
-//    cycles from bus events — actions taken + reasoning per cycle, no LLM call) ──
+// ── score summaries (paraphrase of recent harm/benevolent score trend, every 5 scores) ──
+async function refreshScoreSummaries() {
+  try {
+    const [v2, ctrl] = await Promise.all([
+      fetchJson('/score-summary?role=v2'),
+      fetchJson('/score-summary?role=control'),
+    ]);
+    renderScoreSummary('v2', v2);
+    renderScoreSummary('control', ctrl);
+  } catch (_e) {
+    renderScoreSummary('v2', { summary: '', chunkCount: 0 });
+    renderScoreSummary('control', { summary: '', chunkCount: 0 });
+  }
+}
+function renderScoreSummary(kind, data) {
+  const body = $(`${kind}-score-summary`);
+  const meta = $(`${kind}-score-summary-meta`);
+  if (!body) return;
+  if (!data || data.error) {
+    body.textContent = data?.error ?? '(no data)';
+    if (meta) meta.textContent = '';
+    return;
+  }
+  body.innerHTML = md(data.summary || '_No score summary yet — first chunk after 5 scores._');
+  if (meta) {
+    const lastEnd = data.lastEndCycle ?? 0;
+    const count = data.chunkCount ?? 0;
+    meta.textContent = lastEnd > 0 ? `${count} chunk${count === 1 ? '' : 's'} · through cycle ${lastEnd}` : '';
+  }
+}
+
+// ── cycle summaries (V2-002: derived from /cycle-summary, hierarchical L1 chunks) ──
 async function refreshSummaries() {
   try {
     const [v2, ctrl] = await Promise.all([
@@ -485,14 +515,13 @@ document.querySelectorAll('.t-tab').forEach((btn) => {
   await refreshOnce();
   await refreshScores();
   await refreshSummaries();
+  await refreshScoreSummaries();
   await refreshHypotheses();
   await reloadTranscript();
   startSse();
-  // Refresh cadence: panels that show real-time state (overview, drives, etc.)
-  // poll every POLL_MS. Summaries + scores derive from L1 chunks generated every
-  // 20 cycles; refreshing them every 5 cycles (~150s at 30s cadence) is plenty.
   setInterval(refreshOnce, POLL_MS);
   setInterval(refreshScores, 150_000);
   setInterval(refreshSummaries, 150_000);
+  setInterval(refreshScoreSummaries, 150_000);
   setInterval(refreshHypotheses, 150_000);
 })();
