@@ -19,6 +19,7 @@ import { evaluateAll } from '../hypothesis/evaluator.js';
 import { RaterStore } from '../rater/store.js';
 import { RATER_SYSTEM_PROMPT } from '../rater/rubric.js';
 import { SummaryStore } from '../dashboard/summary-store.js';
+import { startBusPersistence } from '../dashboard/event-persist.js';
 
 const V2_USER_PROMPT = `Choose your next action based on the current state. Reply with a JSON object: {"action": "<tool_name|none>", "args": {...}, "reasoning": "<one short sentence>"}.`;
 
@@ -31,6 +32,13 @@ export interface AgentRunResult {
 
 export async function runAgent(): Promise<AgentRunResult> {
   const harness: BootedHarness = await boot({ agentRole: 'v2' });
+
+  // Persist bus events to disk so the transcript pane survives redeploys.
+  // Hydrates the bus on boot, appends each new event, prunes periodically.
+  startBusPersistence({
+    bus: harness.bus,
+    filePath: `${harness.env.agentStateDir}/bus-events.jsonl`,
+  });
 
   // Mutable handles for control's memory + dataCube + cycle accessor — populated when
   // control boots. Dashboard reads these via getter closures so /memory?role=control,
