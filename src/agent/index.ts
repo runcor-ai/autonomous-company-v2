@@ -15,6 +15,7 @@ import { runControl } from '../control/index.js';
 import type { MemorySystem } from 'runcor-memory';
 import type { DataCube } from 'runcor-data';
 import { callOpenRouterChat } from '../rater/openrouter.js';
+import { evaluateAll } from '../hypothesis/evaluator.js';
 
 const V2_USER_PROMPT = `Choose your next action based on the current state. Reply with a JSON object: {"action": "<tool_name|none>", "args": {...}, "reasoning": "<one short sentence>"}.`;
 
@@ -94,6 +95,37 @@ export async function runAgent(): Promise<AgentRunResult> {
   }).catch((err: unknown) => {
     console.error('[v2] control co-process failed:', err instanceof Error ? err.message : err);
   });
+
+  // Hypothesis evaluator — fires periodically (default 30 min) to score V2's behavior
+  // against the seed hypotheses. Results persist as memory nodes tagged
+  // 'hypothesis_evaluation' and surface via the dashboard /hypothesis endpoint.
+  // First fire is delayed 90s after boot so V2 has produced some cycles to evaluate.
+  const HYPOTHESIS_EVAL_INTERVAL_MS = 30 * 60 * 1000;
+  const FIRST_HYPOTHESIS_EVAL_DELAY_MS = 90 * 1000;
+  const fireHypothesisEval = async (): Promise<void> => {
+    try {
+      const results = await evaluateAll({
+        v2Memory: harness.memory,
+        ...(controlMemory ? { controlMemory } : {}),
+        config: {
+          apiKey: harness.env.openrouterApiKey,
+          model: 'qwen/qwen-2.5-72b-instruct',
+        },
+      });
+      for (const r of results) {
+        await harness.memory.record(JSON.stringify(r), {
+          tags: ['hypothesis_evaluation', `hypothesis:${r.hypothesisId}`, `status:${r.status}`],
+        });
+      }
+      console.log(`[v2] hypothesis evaluator fired — ${results.length} hypotheses scored`);
+    } catch (err) {
+      console.error('[v2] hypothesis evaluator failed:', err instanceof Error ? err.message : err);
+    }
+  };
+  setTimeout(() => {
+    void fireHypothesisEval();
+    setInterval(() => void fireHypothesisEval(), HYPOTHESIS_EVAL_INTERVAL_MS);
+  }, FIRST_HYPOTHESIS_EVAL_DELAY_MS);
 
   // T176: continuous harness-engagement monitor (FR-019g, SC-005).
   const harnessMonitor = createHarnessMonitor({

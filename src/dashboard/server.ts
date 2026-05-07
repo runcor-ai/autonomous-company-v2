@@ -292,17 +292,24 @@ export function startDashboard(args: DashboardArgs): DashboardHandle {
     const role = paramOf(url, 'role') ?? 'v2';
     const limit = Math.min(20, Math.max(1, parseInt(paramOf(url, 'limit') ?? '5', 10)));
 
-    // Pull recent bus events, filter by role, group by cycle.
+    // Pull recent bus events. Some events (execution_complete, cost_request) don't carry
+    // a `cycle` field — the engine emits them without that context. Walk events in order
+    // and attach each to the most recent cycle_record's cycle for the same role.
     const allEvents = args.bus.snapshotAfter(0);
-    const roleEvents = allEvents.filter((e) => {
-      const d = e.data as Record<string, unknown> | undefined;
+    const sortedEvents = [...allEvents].sort((a, b) => ((a as { id?: number }).id ?? 0) - ((b as { id?: number }).id ?? 0));
+    const currentCycleByRole: Record<string, number | undefined> = {};
+    const byCycle = new Map<number, Array<typeof sortedEvents[number]>>();
+    for (const ev of sortedEvents) {
+      const d = ev.data as Record<string, unknown> | undefined;
       const r = typeof d?.agentRole === 'string' ? d.agentRole : 'v2';
-      return r === role;
-    });
-    const byCycle = new Map<number, typeof roleEvents>();
-    for (const ev of roleEvents) {
-      const d = ev.data as Record<string, unknown>;
-      const cycle = typeof d.cycle === 'number' ? d.cycle : -1;
+      // cycle_record events advance the "current cycle" pointer for their role.
+      if (ev.event === 'cycle_record' && typeof d?.cycle === 'number') {
+        currentCycleByRole[r] = d.cycle;
+      }
+      if (r !== role) continue;
+      // Use the event's own cycle if present, otherwise inherit from the role's current cycle.
+      const cycle = typeof d?.cycle === 'number' ? d.cycle : currentCycleByRole[r];
+      if (typeof cycle !== 'number') continue;
       if (!byCycle.has(cycle)) byCycle.set(cycle, []);
       byCycle.get(cycle)!.push(ev);
     }

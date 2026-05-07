@@ -173,3 +173,20 @@ footer a:hover { color: var(--text); }
 .t-event { font-size: 11.5px; padding: 0.2rem 0.4rem; line-height: 1.5; color: var(--text3); }
 .t-event .t-time { color: var(--text3); margin-right: 0.4rem; font-family: monospace; }
 .t-event .t-tag { background: rgba(255,255,255,0.06); padding: 1px 5px; border-radius: 3px; margin-right: 0.4rem; font-size: 10.5px; }
+
+/* Transcript tabs (V2-002) */
+.transcript-tabs { display: flex; gap: 0.4rem; margin-bottom: 0.6rem; border-bottom: 1px solid var(--border); }
+.t-tab {
+  background: transparent; border: 0; border-bottom: 2px solid transparent;
+  color: var(--text3); padding: 0.55rem 1rem; font-size: 13px; cursor: pointer;
+  font-family: inherit; transition: color 0.2s, border-color 0.2s, background 0.2s;
+}
+.t-tab:hover { color: var(--text2); background: rgba(255,255,255,0.03); }
+.t-tab.active { color: var(--text); border-bottom-color: var(--accent, #3b82f6); }
+.transcript-pane { width: 100%; max-width: 100%; overflow-x: hidden; }
+.transcript-pane .transcript {
+  width: 100%; max-width: 100%;
+  max-height: 600px; overflow-y: auto; overflow-x: hidden;
+  word-break: break-word; white-space: normal;
+}
+.transcript-pane .transcript .t-entry { max-width: 100%; overflow-wrap: anywhere; }

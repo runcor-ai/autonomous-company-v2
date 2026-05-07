@@ -361,6 +361,17 @@ function startSse() {
   connect();
 }
 
+// Transcript tabs — switch between V2 and control panes (full-width per pane).
+document.querySelectorAll('.t-tab').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const which = btn.dataset.tab;
+    document.querySelectorAll('.t-tab').forEach((b) => b.classList.toggle('active', b === btn));
+    document.querySelectorAll('.transcript-pane').forEach((p) => {
+      p.style.display = p.dataset.pane === which ? '' : 'none';
+    });
+  });
+});
+
 // ── boot ──
 (async function () {
   const params = new URLSearchParams(location.search);
