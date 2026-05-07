@@ -330,7 +330,13 @@ export function startDashboard(args: DashboardArgs): DashboardHandle {
     const sortedCycles = Array.from(byCycle.entries()).sort((a, b) => b[0] - a[0]).slice(0, limit);
     const actionMap = new Map<string, number>();
     const bullets: string[] = [];
-    let lastCycle = -1;
+    // Use the canonical live cycle counter so this matches the overview panel.
+    // The bus-snapshot's max cycle lags after fresh redeploys; the cycleAccessor
+    // is the authoritative current cycle (persistent across redeploys).
+    const liveCycle = role === 'control'
+      ? (args.getControlCycle?.() ?? 0)
+      : (args.getCurrentCycle?.() ?? 0);
+    let lastCycle = liveCycle;
     for (const [cycleNum, evs] of sortedCycles) {
       if (cycleNum > lastCycle) lastCycle = cycleNum;
       const exec = evs.find((e) => e.event === 'execution_complete');
