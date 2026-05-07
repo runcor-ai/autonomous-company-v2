@@ -244,7 +244,13 @@ export async function runCycles(args: RunCyclesArgs): Promise<{ cyclesRun: numbe
           action,
           recentActions: recent.actions,
           recentActionRecords: recent.records,
-          statedProblems: [],
+          // Watchdog matchers compare statedProblems (what the agent says it needs)
+          // against availableCapabilities (what it has). Pass the current cycle's
+          // reasoning text as the stated problem so watchdog has signal to chew on —
+          // without this, all matchers no-op and 0 findings accumulate ever.
+          statedProblems: action?.reasoning
+            ? [{ text: action.reasoning, source: `cycle-${cycle}` }]
+            : [],
           availableCapabilities: layerContext.capabilityList,
         });
         memoryWrites =
