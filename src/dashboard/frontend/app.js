@@ -32,19 +32,123 @@ function renderOverview(elId, ov) {
 }
 
 // ── poll panels ──
+// ── per-panel readable formatters (replace raw JSON dumps) ──
+function formatDrives(d) {
+  if (!d || d.error) return d?.error ?? 'no data';
+  const drives = ['resource', 'curiosity', 'reactivity', 'coherence'];
+  const max = Math.max(...drives.map((k) => d[k] ?? 0));
+  const lines = drives.map((k) => {
+    const v = d[k] ?? 0;
+    const bars = '█'.repeat(Math.round(v * 20)).padEnd(20, '·');
+    const tag = v === max && v > 0 ? '  ← strongest' : '';
+    return `${k.padEnd(11)} ${v.toFixed(2)}  ${bars}${tag}`;
+  });
+  lines.push('');
+  lines.push(`computed at cycle ${d.computedAtCycle ?? '—'}`);
+  return lines.join('\n');
+}
+
+function formatIdentity(d) {
+  if (!d || d.error) return d?.error ?? 'no data';
+  const snaps = d.snapshots ?? [];
+  if (snaps.length === 0) return 'No identity reflections yet — the agent has not formed a self-theory.';
+  return snaps.slice(0, 3).map((s) => {
+    const ver = (s.tags ?? []).find((t) => t.startsWith('version:'))?.replace('version:', '') ?? '?';
+    const content = String(s.content ?? '').trim();
+    return `Self-theory v${ver}\n${content}`;
+  }).join('\n\n---\n\n');
+}
+
+function formatGoals(d) {
+  if (!d || d.error) return d?.error ?? 'no data';
+  if (!d.plan) return 'No goals proposed yet — the agent has not articulated a plan.';
+  const items = d.plan.items ?? [];
+  if (items.length === 0) return 'Plan exists but is empty.';
+  const strategy = d.plan.strategy ? `Strategy: ${d.plan.strategy}\n\n` : '';
+  const itemLines = items.slice(0, 8).map((i) => {
+    const status = `[${(i.status ?? '?').padEnd(8)}]`;
+    return `${status} ${i.text ?? ''}`;
+  });
+  return strategy + itemLines.join('\n');
+}
+
+function formatCoherence(d) {
+  if (!d || d.error) return d?.error ?? 'no data';
+  const at = (d.activeTasks ?? []).length;
+  const op = (d.openProblems ?? []).length;
+  const fl = (d.initiatedFlows ?? []).length;
+  const lines = [
+    `${at} active task${at === 1 ? '' : 's'}`,
+    `${op} open problem${op === 1 ? '' : 's'}`,
+    `${fl} initiated flow${fl === 1 ? '' : 's'}`,
+  ];
+  if (at === 0 && op === 0 && fl === 0) {
+    lines.push('');
+    lines.push('(coherence has not detected anything to work on yet)');
+  }
+  // Append details if any exist
+  if (op > 0) {
+    lines.push('');
+    lines.push('Open problems:');
+    (d.openProblems ?? []).slice(0, 3).forEach((p) => {
+      lines.push(`  • ${p.problem ?? p.summary ?? JSON.stringify(p).slice(0, 80)}`);
+    });
+  }
+  return lines.join('\n');
+}
+
+function formatWatchdog(d) {
+  if (!d || d.error) return d?.error ?? 'no data';
+  const findings = d.findings ?? [];
+  if (findings.length === 0) return 'No watchdog findings — the agent has not exhibited any flagged patterns.';
+  return findings.slice(0, 5).map((f) => {
+    const cat = f.category ?? '?';
+    const cap = f.capability ? ` [${f.capability}]` : '';
+    const problem = f.problem ?? f.summary ?? '';
+    return `${cat}${cap}\n  ${problem}`;
+  }).join('\n\n');
+}
+
+function formatMemory(d) {
+  if (!d || d.error) return d?.error ?? 'no data';
+  const s = d.stats ?? {};
+  const short = s.shortCubeCount ?? 0;
+  const long = s.longCubeCount ?? 0;
+  const retired = s.retiredCount ?? 0;
+  const lines = [
+    `${short} short-term · ${long} long-term · ${retired} retired`,
+    `Total active: ${short + long}`,
+  ];
+  const nodes = d.nodes ?? [];
+  if (nodes.length > 0) {
+    lines.push('');
+    lines.push(`Recent (top ${Math.min(5, nodes.length)} by relevance):`);
+    nodes.slice(0, 5).forEach((n) => {
+      const content = String(n.content ?? '').replace(/\s+/g, ' ').slice(0, 110);
+      const tags = (n.tags ?? []).slice(0, 2).join(',');
+      const tagPart = tags ? `  [${tags}]` : '';
+      lines.push(`  • ${content}${tagPart}`);
+    });
+  } else {
+    lines.push('');
+    lines.push('(no nodes recorded yet)');
+  }
+  return lines.join('\n');
+}
+
 async function refreshOnce() {
   const v2Tasks = [
     fetchJson('/overview?role=v2').then((d) => renderOverview('v2-overview', d)),
-    fetchJson('/drives?role=v2').then((d) => $('v2-drives').textContent = fmt(d?.summary ?? d)),
-    fetchJson('/identity?role=v2').then((d) => $('v2-identity').textContent = fmt(d?.block ?? d)),
-    fetchJson('/goals?role=v2').then((d) => $('v2-goals').textContent = fmt(d?.block ?? d)),
-    fetchJson('/coherence?role=v2').then((d) => $('v2-coherence').textContent = fmt(d?.block ?? d)),
-    fetchJson('/watchdog?role=v2').then((d) => $('v2-watchdog').textContent = fmt(d)),
-    fetchJson('/memory?role=v2').then((d) => $('v2-memory').textContent = fmt(d)),
+    fetchJson('/drives?role=v2').then((d) => $('v2-drives').textContent = formatDrives(d)),
+    fetchJson('/identity?role=v2').then((d) => $('v2-identity').textContent = formatIdentity(d)),
+    fetchJson('/goals?role=v2').then((d) => $('v2-goals').textContent = formatGoals(d)),
+    fetchJson('/coherence?role=v2').then((d) => $('v2-coherence').textContent = formatCoherence(d)),
+    fetchJson('/watchdog?role=v2').then((d) => $('v2-watchdog').textContent = formatWatchdog(d)),
+    fetchJson('/memory?role=v2').then((d) => $('v2-memory').textContent = formatMemory(d)),
   ];
   const controlTasks = [
     fetchJson('/overview?role=control').then((d) => renderOverview('control-overview', d)),
-    fetchJson('/memory?role=control').then((d) => $('control-memory').textContent = fmt(d)),
+    fetchJson('/memory?role=control').then((d) => $('control-memory').textContent = formatMemory(d)),
   ];
   await Promise.all([...v2Tasks, ...controlTasks]);
 }
