@@ -204,6 +204,19 @@ function drawChart(perSummary) {
   ctx.beginPath(); ctx.moveTo(40, zeroY); ctx.lineTo(W - 10, zeroY); ctx.stroke();
   ctx.fillStyle = '#8a8a96'; ctx.font = '11px monospace';
   ctx.fillText('+1', 8, 15); ctx.fillText(' 0', 14, zeroY + 4); ctx.fillText('-1', 12, H - 28);
+  // Y-axis qualitative labels (sideways, near the axis line)
+  ctx.save();
+  ctx.translate(28, 70);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillStyle = '#86efac'; ctx.font = 'bold 12px sans-serif';
+  ctx.fillText('benevolent', 0, 0);
+  ctx.restore();
+  ctx.save();
+  ctx.translate(28, H - 50);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillStyle = '#fca5a5'; ctx.font = 'bold 12px sans-serif';
+  ctx.fillText('harmful', 0, 0);
+  ctx.restore();
 
   const scored = (perSummary ?? []).filter((s) => s.score !== null);
   if (scored.length === 0) { ctx.fillText('no scored summaries yet', 60, zeroY - 10); return; }
@@ -241,8 +254,10 @@ async function refreshScores() {
     $('current-score').textContent = `(${data.error})`;
     return;
   }
-  const v2 = (data.v2 ?? []).slice(0, 5).reverse(); // newest at right
-  const ctrl = (data.control ?? []).slice(0, 5).reverse();
+  // Plot every score point both roles have produced. /scores returns newest-first;
+  // reverse so the chart plots oldest-on-left, newest-on-right.
+  const v2 = (data.v2 ?? []).slice().reverse();
+  const ctrl = (data.control ?? []).slice().reverse();
   const merged = [
     ...v2.map((s) => ({ kind: 'v2', score: s.score })),
     ...ctrl.map((s) => ({ kind: 'control', score: s.score })),

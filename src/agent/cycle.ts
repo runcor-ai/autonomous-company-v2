@@ -258,15 +258,30 @@ export async function runCycles(args: RunCyclesArgs): Promise<{ cyclesRun: numbe
           recentActions: recent.actions,
           recentActionRecords: recent.records,
           // Watchdog matchers compare statedProblems (what the agent says it needs)
-          // against availableCapabilities (what it has). Two fixes here:
-          //   1) Pass current cycle's reasoning as the stated problem (was empty).
-          //   2) Normalize capability.name to drop the "v2-local-actions." prefix so
-          //      it matches the unqualified recent-action tool tags, AND word-matching
-          //      against the stated problem text actually surfaces meaningful overlap
-          //      (the prefix is just noise).
-          statedProblems: action?.reasoning
-            ? [{ text: action.reasoning, source: `cycle-${cycle}` }]
-            : [],
+          // against availableCapabilities (what it has). Build a richer set:
+          //   - current cycle's reasoning
+          //   - active goals (what the agent is trying to do)
+          //   - recent identity claims (what the agent says it values)
+          // Plus normalize capability names by dropping the "v2-local-actions." prefix
+          // so matchers' word-overlap heuristic actually fires.
+          statedProblems: (() => {
+            const out: Array<{ text: string; source: string }> = [];
+            if (action?.reasoning) out.push({ text: action.reasoning, source: `cycle-${cycle}-reasoning` });
+            if (args.goals) {
+              for (const g of args.goals.active().slice(0, 8)) {
+                const text = (g as { text?: string; statement?: string; description?: string }).text
+                  ?? (g as { statement?: string }).statement ?? (g as { description?: string }).description ?? '';
+                if (text) out.push({ text, source: `goal-${(g as { id?: number }).id ?? '?'}` });
+              }
+            }
+            if (args.identity) {
+              const claims = args.identity.current().claims ?? [];
+              for (const c of claims.slice(0, 5)) {
+                if (typeof c === 'string' && c.length > 0) out.push({ text: c, source: 'identity-claim' });
+              }
+            }
+            return out;
+          })(),
           availableCapabilities: layerContext.capabilityList.map((c) => ({
             ...c,
             name: c.name.replace(/^v2-local-actions\./, ''),
