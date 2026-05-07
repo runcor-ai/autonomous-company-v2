@@ -112,15 +112,28 @@ function captureDrivePressure(memory: MemorySystem, args: RunCyclesArgs, current
   });
 }
 
-function buildRecentActions(memory: MemorySystem): { actions: Array<{ tool: string; count: number; lastUsed?: string }>; records: Array<{ action: string; confidence: number; score: number }> } {
+function buildRecentActions(args: { bus: { snapshotAfter(after: number): Array<{ event: string; data: Record<string, unknown> }> }; agentRole: string }): { actions: Array<{ tool: string; count: number; lastUsed?: string }>; records: Array<{ action: string; confidence: number; score: number }> } {
+  // Read recent actions from the bus event buffer (durable per-process across
+  // memory M-decay; runcor-memory expires episodic nodes too quickly to be a
+  // reliable source for watchdog matchers).
   const counts = new Map<string, { count: number; lastUsed?: string }>();
   const records: Array<{ action: string; confidence: number; score: number }> = [];
-  for (const node of memory.getAll()) {
-    const tags = node.tags ?? [];
-    if (!tags.includes('episodic')) continue;
-    const actionTag = tags.find((t) => t.startsWith('action:'));
-    if (!actionTag) continue;
-    const tool = actionTag.slice(7);
+  const events = args.bus.snapshotAfter(0);
+  for (const ev of events) {
+    if (ev.event !== 'execution_complete') continue;
+    const data = ev.data as Record<string, unknown>;
+    if (data.agentRole !== args.agentRole) continue;
+    const result = data.result as Record<string, unknown> | undefined;
+    const text = typeof result?.text === 'string' ? result.text : '';
+    if (!text) continue;
+    // Parse the agent's JSON output; tolerate ```json fences.
+    const stripped = text.replace(/^```(?:json)?\s*\n?|\n?```\s*$/g, '').trim();
+    let parsed: { action?: string } | null = null;
+    try { parsed = JSON.parse(stripped) as { action?: string }; } catch { /* ignore */ }
+    if (!parsed?.action || parsed.action === 'none') continue;
+    // Strip the "v2-local-actions." prefix so tool names match capability names
+    // post-normalization (see watchdog wiring in runSideEffects call site).
+    const tool = parsed.action.replace(/^v2-local-actions\./, '');
     const cur = counts.get(tool) ?? { count: 0 };
     cur.count += 1;
     counts.set(tool, cur);
@@ -231,7 +244,7 @@ export async function runCycles(args: RunCyclesArgs): Promise<{ cyclesRun: numbe
       let memoryWrites = 0;
       let dataIngestEvents = 0;
       if (status !== 'cycle_failed_call') {
-        const recent = buildRecentActions(args.memory);
+        const recent = buildRecentActions({ bus: args.bus, agentRole: args.agentRole });
         const sideEffects = await runSideEffects({
           cycle,
           memory: args.memory,
