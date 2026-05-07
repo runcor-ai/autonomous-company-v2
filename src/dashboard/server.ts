@@ -363,7 +363,8 @@ export function startDashboard(args: DashboardArgs): DashboardHandle {
     const lastL1End = l1Chunks.length > 0 && l1Chunks[0] ? l1Chunks[0].endCycle : -1;
     const sections: string[] = [];
     if (bullets.length > 0 && lastCycle > lastL1End) {
-      sections.push(`## In progress (cycles ${lastL1End + 1}..${lastCycle})\n\n*${bullets.length} cycles since last summary checkpoint. Will be summarized at cycle ${lastL1End + 20}.*\n\n` +
+      const nextCheckpoint = lastL1End + 5; // matches SUMMARY_INTERVAL_CYCLES in agent/index.ts
+      sections.push(`## In progress (cycles ${lastL1End + 1}..${lastCycle})\n\n*${bullets.length} cycles since last summary checkpoint. Next checkpoint at cycle ${nextCheckpoint}.*\n\n` +
         bullets.slice(0, 5).map((b) => `- ${b}`).join('\n'));
     }
     for (const chunk of l1Chunks.slice(0, 30)) {

@@ -140,7 +140,7 @@ export async function runAgent(): Promise<AgentRunResult> {
   // The chunks accumulate in dashboard-summaries.json. /cycle-summary returns ALL
   // chunks for a role, so the panel covers every cycle since boot.
   const summaryStore = new SummaryStore(`${harness.env.agentStateDir}/dashboard-summaries.json`);
-  const SUMMARY_INTERVAL_CYCLES = 20;
+  const SUMMARY_INTERVAL_CYCLES = 5;
   const raterStore = new RaterStore(`${harness.env.agentStateDir}/rater.db`);
   const lastSummarizedByRole: Record<string, number> = { v2: 0, control: 0 };
   const SCORE_RE = /\{[\s\S]*?"score"[\s\S]*?\}/;
