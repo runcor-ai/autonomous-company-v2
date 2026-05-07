@@ -9,6 +9,7 @@
 
 import path from 'node:path';
 import { mkdir } from 'node:fs/promises';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 
 import { createV2Engine } from '../engine/factory.js';
@@ -288,16 +289,37 @@ export async function boot(args: BootArgs): Promise<BootedHarness> {
   registerPrimordialCycleFlow(engine);
   registerNaiveControlCycleFlow(engine);
 
-  // Cycle/day accessors (closures the tools and cycle loop share).
-  const cycleState = { current: 0 };
-  const dayState = { current: 0 };
+  // Cycle/day accessors — persisted to <agent-state>/cycle-state-<role>.json so
+  // process restarts (Railway redeploys) DON'T reset experimental continuity.
+  const cycleStatePath = `${env.agentStateDir}/cycle-state-${args.agentRole}.json`;
+  const initialState = (() => {
+    try {
+      const raw = readFileSync(cycleStatePath, 'utf-8');
+      const parsed = JSON.parse(raw) as { cycle?: number; day?: number };
+      return { cycle: typeof parsed.cycle === 'number' ? parsed.cycle : 0, day: typeof parsed.day === 'number' ? parsed.day : 0 };
+    } catch {
+      return { cycle: 0, day: 0 };
+    }
+  })();
+  const cycleState = { current: initialState.cycle };
+  const dayState = { current: initialState.day };
+  const persistCycleState = (): void => {
+    try {
+      writeFileSync(cycleStatePath, JSON.stringify({ cycle: cycleState.current, day: dayState.current }));
+    } catch (err) {
+      console.error('[boot] cycle-state persist failed:', err);
+    }
+  };
+  if (initialState.cycle > 0) {
+    console.log(`[boot] resumed ${args.agentRole} from cycle ${initialState.cycle} (day ${initialState.day})`);
+  }
   const cycleAccessor = {
     get: (): number => cycleState.current,
-    set: (c: number): void => { cycleState.current = c; },
+    set: (c: number): void => { cycleState.current = c; persistCycleState(); },
   };
   const dayAccessor = {
     get: (): number => dayState.current,
-    set: (d: number): void => { dayState.current = d; },
+    set: (d: number): void => { dayState.current = d; persistCycleState(); },
   };
 
   // Termination state.
