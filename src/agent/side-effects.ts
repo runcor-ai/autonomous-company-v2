@@ -152,10 +152,16 @@ export async function runSideEffects(args: SideEffectsArgs): Promise<SideEffects
   // C5. Watchdog audit.
   if (args.watchdog) {
     try {
+      // skipValidation: true bypasses the dialectic gate (which was filtering out
+      // every candidate as invalid → 0 findings forever). Candidates are emitted
+      // with validated:false; the dashboard surfaces them so the operator can see
+      // what the matchers fire on, accepting some false positives in exchange for
+      // visibility. Enable validation later when the dialectic prompt is tuned.
       const auditInput: AuditInput = {
         statedProblems: args.statedProblems,
         availableCapabilities: args.availableCapabilities as Capability[],
         recentActions: args.recentActions,
+        skipValidation: true,
       };
       const findings = await args.watchdog.audit(auditInput);
       for (const f of findings) {
