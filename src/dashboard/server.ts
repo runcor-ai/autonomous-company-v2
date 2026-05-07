@@ -612,19 +612,88 @@ export function startDashboard(args: DashboardArgs): DashboardHandle {
         return jsonResponse(res, 200, { plan: args.memory.getPlan() });
       }
       if (pathname === '/drives' && method === 'GET') {
-        // FR-035 — recompute 4 pressures per request from current memory + temporal state.
+        // FR-035 — recompute 4 pressures per request from real signals in memory.
         const role = paramOf(url, 'role') ?? 'v2';
         const mem = role === 'control' && args.controlMemory ? args.controlMemory : args.memory;
         const cycle = args.getCurrentCycle?.() ?? 0;
-        const tagSet = new Set<string>();
-        for (const n of mem.getAll()) for (const t of n.tags ?? []) tagSet.add(t);
-        const exploredAreas = Array.from(tagSet);
+        const allNodes = mem.getAll();
+
+        // CURIOSITY: explored = action types actually invoked + topic strings appearing
+        // as agent reasoning content; known = the full action surface + entities in
+        // memory tags. Pressure rises when explored is much smaller than known.
+        const exploredSet = new Set<string>();
+        const knownSet = new Set<string>();
+        const allActionNames = (args.getCurrentTools?.() ?? []).map((t) => t.name.split('.').pop() ?? '');
+        for (const a of allActionNames) if (a) knownSet.add(a);
+        let lastExplorationCycle = -1;
+        for (const n of allNodes) {
+          for (const t of n.tags ?? []) {
+            if (t.startsWith('action:') || t.startsWith('action_type:')) {
+              const name = t.split(':')[1];
+              if (name) {
+                exploredSet.add(name);
+                knownSet.add(name);
+              }
+            }
+            if (t.startsWith('cycle:')) {
+              const c = parseInt(t.split(':')[1] ?? '0', 10);
+              if (Number.isFinite(c)) lastExplorationCycle = Math.max(lastExplorationCycle, c);
+            }
+          }
+        }
+        const recentExplorationCycles = lastExplorationCycle >= 0 ? cycle - lastExplorationCycle : cycle;
+
+        // REACTIVITY: pending events from open watchdog findings + recent discernment
+        // flags. Each one's urgency reflects how the agent should attend to it.
+        const reactivityEvents: Array<{ kind: string; urgency: 'low' | 'medium' | 'high' | 'critical'; age: number }> = [];
+        for (const n of allNodes) {
+          const tags = n.tags ?? [];
+          if (tags.includes('watchdog_finding') && tags.includes('open')) {
+            reactivityEvents.push({ kind: 'watchdog_finding', urgency: 'medium', age: 0 });
+          }
+          if (tags.includes('discernment_flag')) {
+            reactivityEvents.push({ kind: 'discernment_flag', urgency: 'high', age: 0 });
+          }
+        }
+
+        // COHERENCE: identity self-theory claims vs recent action records. A claims/
+        // actions mismatch raises coherence pressure (the agent should reconcile).
+        const identityNodes = allNodes
+          .filter((n) => (n.tags ?? []).includes('identity_snapshot'))
+          .sort((a, b) => (b.lastAccessed ?? 0) - (a.lastAccessed ?? 0));
+        const claims: string[] = [];
+        const latestIdentity = identityNodes[0];
+        if (latestIdentity?.content) {
+          const claimsBlock = latestIdentity.content.match(/(?:CLAIMS|Claims):([\s\S]*?)(?=\n[A-Z]+:|\n\n|$)/);
+          if (claimsBlock?.[1]) {
+            for (const line of claimsBlock[1].split('\n')) {
+              const trimmed = line.replace(/^[\s\-*]+/, '').trim();
+              if (trimmed.length > 5) claims.push(trimmed.slice(0, 150));
+            }
+          }
+        }
+        const actionNodes = allNodes
+          .filter((n) => (n.tags ?? []).some((t) => t.startsWith('episodic_action') || t.startsWith('action:')))
+          .sort((a, b) => (b.lastAccessed ?? 0) - (a.lastAccessed ?? 0))
+          .slice(0, 10);
+        const recentActions = actionNodes.map((n) => {
+          const tag = (n.tags ?? []).find((t) => t.startsWith('action:'));
+          return { action: tag ? tag.slice(7) : 'unknown', confidence: 0.5 };
+        });
+
         const resourceInputs = args.getResourceInputs?.();
         const pressure = computeDrives({
           ...(resourceInputs ? { resource: resourceInputs } : {}),
-          curiosity: { exploredAreas, knownAreas: exploredAreas, recentExplorationCycles: 0 },
-          reactivity: { pendingEvents: [] },
-          coherence: { selfTheoryClaims: [], recentActions: [] },
+          curiosity: {
+            exploredAreas: Array.from(exploredSet),
+            knownAreas: Array.from(knownSet),
+            recentExplorationCycles,
+          },
+          reactivity: { pendingEvents: reactivityEvents },
+          coherence: {
+            selfTheoryClaims: claims,
+            recentActions,
+          },
         });
         return jsonResponse(res, 200, {
           resource: pressure.resource?.intensity ?? 0,
