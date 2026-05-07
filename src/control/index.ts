@@ -7,6 +7,7 @@
 
 import { boot } from '../boot/boot.js';
 import { runCycles } from './cycle.js';
+import { subscribeEngineTelemetry } from '../engine/telemetry.js';
 
 export interface ControlRunResult {
   cyclesRun: number;
@@ -36,6 +37,14 @@ export async function runControl(opts: RunControlOptions = {}): Promise<ControlR
     getCycle: () => harness.cycleAccessor.get(),
   });
   const bus = opts.sharedBus ?? harness.bus;
+
+  // Boot already subscribed engine telemetry to control's local bus. When a sharedBus
+  // is provided (V2 co-process mode), ALSO subscribe to the shared bus so the V2
+  // dashboard receives control's cost_request / execution_complete / etc. events
+  // tagged with agentRole='control'.
+  if (opts.sharedBus && opts.sharedBus !== harness.bus) {
+    subscribeEngineTelemetry({ engine: harness.engine, bus: opts.sharedBus, agentRole: 'control' });
+  }
 
   try {
     const result = await runCycles({

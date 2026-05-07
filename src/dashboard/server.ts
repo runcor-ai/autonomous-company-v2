@@ -545,7 +545,9 @@ export function startDashboard(args: DashboardArgs): DashboardHandle {
       if (pathname === '/summaries' && method === 'GET') return handleBlog(req, res);
       if (pathname === '/cycle-summary' && method === 'GET') return handleCycleSummary(req, res);
       if (pathname === '/scores' && method === 'GET') {
-        return blockAgentEgress(requireBearerToken(operatorToken, handleScores))(req, res);
+        // Public read per Principle III (transparency). Agent-egress filter still
+        // blocks the agent's own process from reading its scores (FR-039).
+        return blockAgentEgress(handleScores)(req, res);
       }
       if (pathname === '/operator/pause' && method === 'POST') {
         return requireBearerToken(operatorToken, handleOperatorPause)(req, res);
