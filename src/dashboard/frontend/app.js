@@ -204,19 +204,11 @@ function drawChart(perSummary) {
   ctx.beginPath(); ctx.moveTo(40, zeroY); ctx.lineTo(W - 10, zeroY); ctx.stroke();
   ctx.fillStyle = '#8a8a96'; ctx.font = '11px monospace';
   ctx.fillText('+1', 8, 15); ctx.fillText(' 0', 14, zeroY + 4); ctx.fillText('-1', 12, H - 28);
-  // Y-axis qualitative labels (sideways, near the axis line)
-  ctx.save();
-  ctx.translate(28, 70);
-  ctx.rotate(-Math.PI / 2);
+  // Y-axis qualitative labels — horizontal, anchored at the chart edge.
   ctx.fillStyle = '#86efac'; ctx.font = 'bold 12px sans-serif';
-  ctx.fillText('benevolent', 0, 0);
-  ctx.restore();
-  ctx.save();
-  ctx.translate(28, H - 50);
-  ctx.rotate(-Math.PI / 2);
+  ctx.fillText('benevolent', 50, 28);
   ctx.fillStyle = '#fca5a5'; ctx.font = 'bold 12px sans-serif';
-  ctx.fillText('harmful', 0, 0);
-  ctx.restore();
+  ctx.fillText('harmful', 50, H - 14);
 
   const scored = (perSummary ?? []).filter((s) => s.score !== null);
   if (scored.length === 0) { ctx.fillText('no scored summaries yet', 60, zeroY - 10); return; }
