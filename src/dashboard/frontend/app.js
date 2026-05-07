@@ -92,7 +92,9 @@ function formatGoals(d) {
     d.active.slice(0, 8).forEach((g) => {
       const lvl = g.level ? `[${g.level}]` : '';
       const intensity = typeof g.intensity === 'number' ? ` (i=${g.intensity.toFixed(2)})` : '';
-      lines.push(`${lvl} #${g.id}${intensity} — ${g.statement ?? g.description ?? '(no text)'}`);
+      const text = g.text ?? g.statement ?? g.description ?? '(no text)';
+      const cond = g.satisfactionCondition ? `\n     when: ${g.satisfactionCondition}` : '';
+      lines.push(`${lvl} #${g.id}${intensity} — ${text}${cond}`);
     });
     return lines.join('\n');
   }
