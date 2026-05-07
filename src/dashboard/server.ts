@@ -493,19 +493,32 @@ export function startDashboard(args: DashboardArgs): DashboardHandle {
   };
 
   const handleHypothesis: RequestHandler = async (_req, res) => {
-    // Read the latest evaluation set from memory (cached by an out-of-band runner).
-    const all = args.memory.getAll().filter((n) => (n.tags ?? []).includes('hypothesis_evaluation'));
-    const evaluations = all
-      .sort((a, b) => b.lastAccessed - a.lastAccessed)
-      .slice(0, 8) // 8 hypotheses
-      .map((n) => {
-        try {
-          return JSON.parse(n.content) as Record<string, unknown>;
-        } catch {
-          return { error: 'parse_failed', content: n.content.slice(0, 200) };
+    // The frontend renders one card per seed hypothesis with the most recent
+    // evaluation embedded as `latest`. Returns an Array<{ id, title, description,
+    // latest: EvaluationResult|null }>.
+    const seed = (await import('../hypothesis/seed.js')).SEED_HYPOTHESES;
+    const evalNodes = args.memory.getAll().filter((n) => (n.tags ?? []).includes('hypothesis_evaluation'));
+    const latestById = new Map<string, { eval: Record<string, unknown>; lastAccessed: number }>();
+    for (const n of evalNodes) {
+      try {
+        const parsed = JSON.parse(n.content) as { hypothesisId?: string };
+        const id = parsed.hypothesisId;
+        if (typeof id !== 'string') continue;
+        const prior = latestById.get(id);
+        if (!prior || n.lastAccessed > prior.lastAccessed) {
+          latestById.set(id, { eval: parsed as unknown as Record<string, unknown>, lastAccessed: n.lastAccessed });
         }
-      });
-    jsonResponse(res, 200, { evaluations });
+      } catch {
+        // ignore parse failures
+      }
+    }
+    const cards = seed.map((h) => ({
+      id: h.id,
+      title: h.title,
+      description: h.description,
+      latest: latestById.get(h.id)?.eval ?? null,
+    }));
+    jsonResponse(res, 200, cards);
   };
 
   const handleFrontend = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
