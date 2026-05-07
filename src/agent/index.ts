@@ -321,8 +321,10 @@ Keep total under 150 words. No preamble.`,
       maxCycles: harness.env.maxCycles,
       budgetUsd: harness.env.v2BudgetUsd,
       isTerminated: harness.terminationState.isTerminated,
+      // Resume from the persisted cycle counter so redeploys don't reset to 0.
+      startCycle: harness.cycleAccessor.get(),
       onCycleAdvance: (c: number) => harness.cycleAccessor.set(c),
-      maxSleepSeconds: harness.env.v2IntervalSeconds, // cap V2's adaptive sleep at the env baseline
+      maxSleepSeconds: harness.env.v2IntervalSeconds,
     });
 
     // FR-110, FR-120, FR-121: generate + publish result.md regardless of outcome.

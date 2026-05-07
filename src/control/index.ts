@@ -66,6 +66,7 @@ export async function runControl(opts: RunControlOptions = {}): Promise<ControlR
       budgetUsd: harness.controlConfig.config.budgetUsd,
       isTerminated: harness.terminationState.isTerminated,
       fixedSleepMs: harness.controlConfig.config.cadenceMs, // FR-105 fixed cadence
+      startCycle: harness.cycleAccessor.get(),
       onCycleAdvance: (c: number) => harness.cycleAccessor.set(c),
     });
     return { cyclesRun: result.cyclesRun, reason: result.reason, totalSpentUsd: result.spentUsd };
