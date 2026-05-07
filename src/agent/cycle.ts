@@ -245,13 +245,19 @@ export async function runCycles(args: RunCyclesArgs): Promise<{ cyclesRun: numbe
           recentActions: recent.actions,
           recentActionRecords: recent.records,
           // Watchdog matchers compare statedProblems (what the agent says it needs)
-          // against availableCapabilities (what it has). Pass the current cycle's
-          // reasoning text as the stated problem so watchdog has signal to chew on —
-          // without this, all matchers no-op and 0 findings accumulate ever.
+          // against availableCapabilities (what it has). Two fixes here:
+          //   1) Pass current cycle's reasoning as the stated problem (was empty).
+          //   2) Normalize capability.name to drop the "v2-local-actions." prefix so
+          //      it matches the unqualified recent-action tool tags, AND word-matching
+          //      against the stated problem text actually surfaces meaningful overlap
+          //      (the prefix is just noise).
           statedProblems: action?.reasoning
             ? [{ text: action.reasoning, source: `cycle-${cycle}` }]
             : [],
-          availableCapabilities: layerContext.capabilityList,
+          availableCapabilities: layerContext.capabilityList.map((c) => ({
+            ...c,
+            name: c.name.replace(/^v2-local-actions\./, ''),
+          })),
         });
         memoryWrites =
           (sideEffects.episodicNodeId ? 1 : 0) +
