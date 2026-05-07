@@ -52,6 +52,9 @@ export interface DashboardArgs {
    *  (action mix + recent reasoning bullets), returns 2-3 sentence narrative paraphrase.
    *  Server caches result for 60s per role to avoid bursting LLM calls. Observer-side only. */
   summarizeRecent?: (input: { role: string; bullets: string[]; actions: Array<{ action: string; count: number }> }) => Promise<string>;
+  /** Dashboard-side hierarchical summary store (purely observer-layer; not in runcor-memory).
+   *  Generator writes L1 chunks every 20 cycles; /cycle-summary reads all chunks. */
+  summaryStore?: import('./summary-store.js').SummaryStore;
 }
 
 export interface DashboardHandle {
@@ -341,34 +344,41 @@ export function startDashboard(args: DashboardArgs): DashboardHandle {
       .map(([action, count]) => ({ action, count }))
       .sort((a, b) => b.count - a.count);
 
-    // If cache is fresh AND lastCycle hasn't advanced, serve cached.
+    // Read ALL L1 chunks from the dashboard summary store (NOT runcor-memory — these
+    // are observer-layer artifacts the agent never sees). Concatenated newest-first
+    // they cover every cycle since boot.
+    const l1Chunks = (args.summaryStore?.list(role as 'v2' | 'control') ?? [])
+      .filter((c) => c.tier === 'L1')
+      .sort((a, b) => b.endCycle - a.endCycle);
+
     const now = Date.now();
     const cached = summaryCache[role];
-    if (cached && cached.expiresAt > now && cached.lastCycle === lastCycle) {
+    const cacheKey = `${lastCycle}:${l1Chunks.length}`;
+    if (cached && cached.expiresAt > now && cached.bullets.join('|') === cacheKey) {
       jsonResponse(res, 200, { ...cached, fromCache: true, actionMix });
       return;
     }
 
-    // Build paraphrase via cheap-model summarizer if wired; otherwise fall back to bullets.
-    let summary: string;
-    if (args.summarizeRecent && bullets.length > 0) {
-      try {
-        summary = await args.summarizeRecent({ role, bullets, actions: actionMix });
-      } catch (err) {
-        console.warn('[dashboard] summarizeRecent failed, falling back to bullets:', err);
-        summary = bullets.length > 0
-          ? `### Recent ${bullets.length} cycles\n\n${bullets.map((b) => `- ${b}`).join('\n')}`
-          : '_No cycles recorded yet._';
-      }
-    } else {
-      summary = bullets.length > 0
-        ? `### Recent ${bullets.length} cycles\n\n${bullets.map((b) => `- ${b}`).join('\n')}`
-        : '_No cycles recorded yet._';
+    // In-progress chunk = cycles after the most recent L1 chunk's end.
+    const lastL1End = l1Chunks.length > 0 && l1Chunks[0] ? l1Chunks[0].endCycle : -1;
+    const sections: string[] = [];
+    if (bullets.length > 0 && lastCycle > lastL1End) {
+      sections.push(`## In progress (cycles ${lastL1End + 1}..${lastCycle})\n\n*${bullets.length} cycles since last summary checkpoint. Will be summarized at cycle ${lastL1End + 20}.*\n\n` +
+        bullets.slice(0, 5).map((b) => `- ${b}`).join('\n'));
     }
+    for (const chunk of l1Chunks.slice(0, 30)) {
+      sections.push(`## Cycles ${chunk.startCycle}..${chunk.endCycle}\n\n${chunk.content}`);
+    }
+    const summary = sections.length > 0
+      ? sections.join('\n\n---\n\n')
+      : '_No cycles recorded yet — first summary checkpoint at cycle 20._';
 
     const generatedAt = new Date().toISOString();
-    summaryCache[role] = { summary, lastCycle, generatedAt, actionMix, bullets, expiresAt: now + SUMMARY_TTL_MS };
-    jsonResponse(res, 200, { summary, lastCycle, generatedAt, fromCache: false, actionMix });
+    summaryCache[role] = { summary, lastCycle, generatedAt, actionMix, bullets: [cacheKey], expiresAt: now + SUMMARY_TTL_MS };
+    jsonResponse(res, 200, {
+      summary, lastCycle, generatedAt, fromCache: false, actionMix,
+      chunkCount: l1Chunks.length,
+    });
   };
 
   const handleMemoryNode: RequestHandler = (req, res) => {

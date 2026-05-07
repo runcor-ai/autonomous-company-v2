@@ -488,8 +488,11 @@ document.querySelectorAll('.t-tab').forEach((btn) => {
   await refreshHypotheses();
   await reloadTranscript();
   startSse();
+  // Refresh cadence: panels that show real-time state (overview, drives, etc.)
+  // poll every POLL_MS. Summaries + scores derive from L1 chunks generated every
+  // 20 cycles; refreshing them every 5 cycles (~150s at 30s cadence) is plenty.
   setInterval(refreshOnce, POLL_MS);
-  setInterval(refreshScores, POLL_MS);          // bar + chart update with the rest
-  setInterval(refreshSummaries, 30_000);        // summaries refresh every 30s (server caches 60s)
-  setInterval(refreshHypotheses, 60_000);       // hypotheses refresh every 60s (matcher ticks every 30 min)
+  setInterval(refreshScores, 150_000);
+  setInterval(refreshSummaries, 150_000);
+  setInterval(refreshHypotheses, 150_000);
 })();
