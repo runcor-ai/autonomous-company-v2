@@ -3,7 +3,7 @@
 **Branch**: `002-faithful-rebuild` | **Date**: 2026-05-05
 **Audience**: V2 dashboard implementers, frontend developers, external observers (per Principle III), test authors
 
-This contract enumerates every HTTP / SSE endpoint the dashboard exposes. Every endpoint maps to one or more FRs from `spec.md`. Auth column values: **public** (no auth, per Principle III), **bearer** (requires `Authorization: Bearer <OPERATOR_AUTH_TOKEN>`, per FR-132), **bearer + egress filter** (FR-134).
+This contract enumerates every HTTP / SSE endpoint the dashboard exposes. Every endpoint maps to one or more FRs from `spec.md`. Auth column values: **public** (no auth, per Principle III), **bearer** (requires `Authorization: Bearer <OPERATOR_AUTH_TOKEN>`, per FR-132), **public + egress filter** (public read but blocked from agent's egress IP, per FR-134).
 
 ## Conventions
 
@@ -134,9 +134,9 @@ The static frontend at `https://runner-v2.runcor.ai/blog/` (served from `src/das
 
 ### `GET /scores`
 
-**Auth**: **bearer + egress filter** (FR-134).
+**Auth**: **public + egress filter** (FR-134).
 **FR**: FR-039.
-Returns rater scores per agent role per day. Public observers without the operator token CANNOT see this — this is the only read endpoint that requires auth (preserves Principle III's transparency for everyone EXCEPT the agent-shaped contamination vector).
+Returns rater scores per agent role per day. Public observers see scores; only the agent's own process is blocked, by source-IP filter (HTTP 403 `forbidden_egress` for matching requests). This preserves Principle III (transparency to outside world) while keeping Principle IX (no contamination) honest — the agent has no read path to its own scores even if it knew the URL.
 
 Response:
 ```json

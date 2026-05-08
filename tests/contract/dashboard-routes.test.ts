@@ -73,13 +73,21 @@ describe('T131: operator-auth (FR-132)', () => {
   });
 });
 
-describe('T132: /scores blocked from agent egress (FR-134)', () => {
-  test('without bearer returns 401', async () => {
+describe('T132: /scores public read + blocked from agent egress (FR-039, FR-134)', () => {
+  // Spec updated 2026-05-08: bearer-token requirement was dropped (Principle III takes
+  // precedence — public observers should see scores). Agent-egress filter is now the sole
+  // gate; the agent's own process is blocked by source-IP, not by token.
+  test('public observers (no bearer) get 200 with the documented shape', async () => {
     const res = await get(`${fixture.baseUrl}/scores`);
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(200);
+    const json = res.json as Record<string, unknown>;
+    expect(json).toHaveProperty('v2');
+    expect(json).toHaveProperty('control');
+    expect(Array.isArray(json.v2)).toBe(true);
+    expect(Array.isArray(json.control)).toBe(true);
   });
 
-  test('with bearer but agent-egress IP returns 403', async () => {
+  test('agent-egress IP gets 403 forbidden_egress (with or without bearer)', async () => {
     // Tear down + reboot fixture with the loopback IP marked as agent egress.
     await fixture.cleanup();
     fixture = await createDashboardFixture({ agentEgressIps: '127.0.0.1' });
