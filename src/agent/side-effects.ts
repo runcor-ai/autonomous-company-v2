@@ -32,8 +32,14 @@ const SKILL_SYNTHESIZE_EVERY = 50;
 // forbade outward actions, crystallized from 20 cycles of inactivity. Symmetric to FR-076b
 // (MemoryRecall renders empty when there's nothing to recall) — cognitive synthesis steps
 // that can't synthesize honestly should not synthesize at all.
-const MIN_DATA_ENTITIES_FOR_GOAL_PROPOSE = 3;
-const MIN_DATA_ENTITIES_FOR_IDENTITY_REFLECT = 5;
+//
+// Thresholds raised 2026-05-08 from 3/5 to 10/15 after the cube finally started populating
+// (post-fe3ce86 deploy): the first sample showed 13 goals already accepted at 16 entities,
+// meaning the gate fired aggressively the moment the cube crossed 3. Higher floors give the
+// agent more world-grounding to reason against before its first goal proposal — the
+// dialectic produces sharper goals when there's more to point at.
+const MIN_DATA_ENTITIES_FOR_GOAL_PROPOSE = 10;
+const MIN_DATA_ENTITIES_FOR_IDENTITY_REFLECT = 15;
 
 export interface ActionInvocation {
   name: string;
