@@ -8,7 +8,7 @@
 // Steps 1–16 mirror the contract verbatim. Comments mark each step.
 
 import path from 'node:path';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, readdir, rm } from 'node:fs/promises';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 
@@ -128,6 +128,94 @@ function verifyComponentResolution(): Partial<Record<CanonicalComponentName, { s
   return health;
 }
 
+/**
+ * RESET_ON_BOOT implementation. Removes agent-state files for the given role + role-shared
+ * dashboard files, leaving operator.db intact. Best-effort: any single delete failure is
+ * logged but does not block boot — the goal is "as much fresh state as we can manage,"
+ * not all-or-nothing atomicity.
+ *
+ * Files removed (per-role):
+ *   - <agent|control>-{memory,data,temporal,identity,goals,coherence,integration}.db
+ *     and their -wal / -shm SQLite sidecars
+ *   - cycle-state-<role>.json
+ *
+ * Files removed (role-shared dashboard):
+ *   - bus-events.jsonl (transcript history)
+ *   - dashboard-summaries.json (hierarchical L1 summaries)
+ *   - rater.db / -wal / -shm (scoring history — orphan rows otherwise)
+ *
+ * Files PRESERVED:
+ *   - operator.db (operator audit log — Principle IX historical record)
+ *
+ * Scratchpad: cleared (agent's prior fs_write outputs would otherwise pollute fs_read on the
+ * fresh run).
+ */
+async function performResetOnBoot(
+  agentStateDir: string,
+  scratchpadDir: string,
+  agentRole: AgentRole,
+): Promise<void> {
+  const startTs = Date.now();
+  const removed: string[] = [];
+  const failed: Array<{ file: string; error: string }> = [];
+
+  const componentDbBases = ['memory', 'data', 'temporal', 'identity', 'goals', 'coherence', 'integration'];
+  const sqliteSuffixes = ['.db', '.db-wal', '.db-shm'];
+  const targets: string[] = [];
+
+  // Per-role component DBs.
+  for (const base of componentDbBases) {
+    for (const suf of sqliteSuffixes) {
+      targets.push(path.join(agentStateDir, `${agentRole}-${base}${suf}`));
+    }
+  }
+  // Per-role cycle/day persistence file.
+  targets.push(path.join(agentStateDir, `cycle-state-${agentRole}.json`));
+
+  // Role-shared dashboard state. Wiping these on V2 boot is intentional — a reset of V2
+  // means we're discarding the experiment series; transcript + scores + summaries from
+  // the prior series would otherwise be misleading at /transcript, /scores, /blog.
+  targets.push(path.join(agentStateDir, 'bus-events.jsonl'));
+  targets.push(path.join(agentStateDir, 'dashboard-summaries.json'));
+  for (const suf of sqliteSuffixes) {
+    targets.push(path.join(agentStateDir, `rater${suf}`));
+  }
+
+  for (const target of targets) {
+    try {
+      await rm(target, { force: true });
+      removed.push(path.basename(target));
+    } catch (err) {
+      failed.push({ file: path.basename(target), error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
+  // Clear scratchpad contents (agent's fs_write outputs from the prior run).
+  try {
+    const entries = await readdir(scratchpadDir);
+    for (const entry of entries) {
+      try {
+        await rm(path.join(scratchpadDir, entry), { recursive: true, force: true });
+        removed.push(`scratchpad/${entry}`);
+      } catch (err) {
+        failed.push({ file: `scratchpad/${entry}`, error: err instanceof Error ? err.message : String(err) });
+      }
+    }
+  } catch {
+    // Scratchpad dir might not exist on first boot — that's fine.
+  }
+
+  const elapsedMs = Date.now() - startTs;
+  // eslint-disable-next-line no-console
+  console.log(`[boot:RESET_ON_BOOT] role=${agentRole} removed=${removed.length} failed=${failed.length} ms=${elapsedMs}`);
+  if (failed.length > 0) {
+    // eslint-disable-next-line no-console
+    console.warn('[boot:RESET_ON_BOOT] failures:', failed);
+  }
+  // eslint-disable-next-line no-console
+  console.log('[boot:RESET_ON_BOOT] PRESERVED: operator.db (audit log untouched).');
+}
+
 export async function boot(args: BootArgs): Promise<BootedHarness> {
   // Step 1: env
   let env: V2Env;
@@ -138,6 +226,18 @@ export async function boot(args: BootArgs): Promise<BootedHarness> {
   }
   await mkdir(env.agentStateDir, { recursive: true });
   await mkdir(env.scratchpadDir, { recursive: true });
+
+  // Step 1.5: RESET_ON_BOOT — wipe agent state before any component initializes (env.resetOnBoot).
+  // What gets wiped: memory, data, temporal, identity, goals, coherence, integration DBs (per
+  // role), the cycle-state JSON, the persisted bus-events transcript, the rater scoring DB, the
+  // dashboard summary store, the agent's scratchpad files. What is PRESERVED: operator.db
+  // (the operator's audit log — Principle IX historical record, not agent state).
+  // The reset is per-role: booting the V2 process wipes V2's stores; control's stores are
+  // touched only when the control process boots. Both roles share rater.db, summary-store, and
+  // bus-events — these are dashboard-side and get wiped on the first reset boot of either role.
+  if (env.resetOnBoot) {
+    await performResetOnBoot(env.agentStateDir, env.scratchpadDir, args.agentRole);
+  }
 
   // Step 2: 14-component resolution check
   const componentHealth = verifyComponentResolution();
