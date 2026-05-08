@@ -284,9 +284,20 @@ export async function boot(args: BootArgs): Promise<BootedHarness> {
   // engine.modelRouter is TS-private at compile time but accessible at runtime (the substrate
   // installer reads it the same way). Cast to bypass the visibility check.
   const looseEngineForModel = engine as unknown as { modelRouter: { complete: (req: Record<string, unknown>) => Promise<{ text: string }> } };
+  // Component pipelines (DataCube identify/normalize/conflict + integration schema discovery)
+  // do strict JSON.parse on responses. The default 'openrouter/auto' router lands on
+  // gemini-2.5-flash-lite which produced prose-wrapped or truncated JSON under the
+  // substrate-prepended Laws+Reality systemPrompt — observed live 2026-05-08 (cycle 56–61
+  // failed with "Unterminated string in JSON at position 3545"). Force a model with strong
+  // JSON adherence for these calls. claude-3.5-haiku is the right balance: ~10× the cost of
+  // flash-lite (~$1/1M tokens) but produces strict JSON reliably.
+  const COMPONENT_MODEL = 'anthropic/claude-3.5-haiku';
   const componentModel = {
-    complete: async (request: { prompt?: string; systemPrompt?: string; responseFormat?: 'text' | 'json'; temperature?: number; maxTokens?: number }): Promise<{ text: string }> => {
-      const response = await looseEngineForModel.modelRouter.complete(request as unknown as Record<string, unknown>);
+    complete: async (request: { prompt?: string; systemPrompt?: string; responseFormat?: 'text' | 'json'; temperature?: number; maxTokens?: number; model?: string }): Promise<{ text: string }> => {
+      // Force the JSON-strict model unless the caller explicitly chose one. Data-cube +
+      // integration never specify model, so this defaults the entire component-side path.
+      const requestWithModel = { ...request, model: request.model ?? COMPONENT_MODEL };
+      const response = await looseEngineForModel.modelRouter.complete(requestWithModel as unknown as Record<string, unknown>);
       return { text: response.text };
     },
   };

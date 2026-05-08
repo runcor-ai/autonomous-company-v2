@@ -63,11 +63,23 @@ describe('T088: boot.ts try/catch covers every component (FR-011)', () => {
     const modelRouterRefs = (src.match(/modelRouter\.complete/g) ?? []).length;
     if (modelRouterRefs > 0) {
       // All references must appear within the componentModel block. Locate it by its
-      // declaration, capture body up to the closing `};`.
+      // declaration; walk the brace nesting to find the true outer `};` (so nested object
+      // literals inside the closure body don't terminate the block prematurely).
       const blockStart = src.indexOf('const componentModel = {');
       expect(blockStart).toBeGreaterThan(0);
-      // Find the closing `};` after the block.
-      const blockEnd = src.indexOf('};', blockStart);
+      let depth = 0;
+      let blockEnd = -1;
+      for (let i = blockStart + 'const componentModel = '.length; i < src.length; i++) {
+        const c = src[i];
+        if (c === '{') depth += 1;
+        else if (c === '}') {
+          depth -= 1;
+          if (depth === 0) {
+            blockEnd = i + 1;
+            break;
+          }
+        }
+      }
       expect(blockEnd).toBeGreaterThan(blockStart);
       const block = src.slice(blockStart, blockEnd);
       const refsInBlock = (block.match(/modelRouter\.complete/g) ?? []).length;
