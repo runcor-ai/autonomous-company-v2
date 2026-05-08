@@ -269,11 +269,33 @@ export async function boot(args: BootArgs): Promise<BootedHarness> {
     throw new BootError('runcor-memory', err instanceof Error ? err.message : String(err));
   }
 
+  // Shared ModelComplete wrapper for components whose pipelines need an LLM (data cube
+  // entity extraction, integration schema classification). Routes through engine.modelRouter
+  // so calls are substrate-gated per FR-010 — entity extraction isn't agent reasoning, but
+  // the constitutional rule is uniform: every LLM call goes through the engine. Performance
+  // overhead is acceptable; if cost becomes a problem, we can introduce a separate
+  // observer-side direct caller (parallel to src/rater) — that's an architectural change
+  // and a separate commit.
+  // Bug fixed 2026-05-08: pre-fix, DataCube was constructed WITHOUT a model, so every
+  // ingest() call threw "DataCube.ingest requires a `model` to be configured" silently
+  // (caught by side-effects.ts try/catch + logged into result.errors). The data cube
+  // stayed empty across thousands of cycles, the readiness gates never released,
+  // goals.propose() and identity.reflect() never fired against grounded world-state.
+  // engine.modelRouter is TS-private at compile time but accessible at runtime (the substrate
+  // installer reads it the same way). Cast to bypass the visibility check.
+  const looseEngineForModel = engine as unknown as { modelRouter: { complete: (req: Record<string, unknown>) => Promise<{ text: string }> } };
+  const componentModel = {
+    complete: async (request: { prompt?: string; systemPrompt?: string; responseFormat?: 'text' | 'json'; temperature?: number; maxTokens?: number }): Promise<{ text: string }> => {
+      const response = await looseEngineForModel.modelRouter.complete(request as unknown as Record<string, unknown>);
+      return { text: response.text };
+    },
+  };
+
   // Step 6: data cube
   const dataDbPath = dbPathFor(env, args.agentRole, 'data');
   let dataCube: DataCube;
   try {
-    dataCube = new DataCube({ dbPath: dataDbPath });
+    dataCube = new DataCube({ dbPath: dataDbPath, model: componentModel });
   } catch (err) {
     componentHealth['runcor-data'] = { status: 'fail', reason: err instanceof Error ? err.message : String(err) };
     throw new BootError('runcor-data', err instanceof Error ? err.message : String(err));
@@ -282,9 +304,8 @@ export async function boot(args: BootArgs): Promise<BootedHarness> {
   // Step 7: integration
   let integration: Integration;
   try {
-    const dummyModel = { complete: async () => ({ text: '' }) };
     integration = createIntegration({
-      model: dummyModel,
+      model: componentModel,
       dbPath: dbPathFor(env, args.agentRole, 'integration'),
     });
   } catch (err) {

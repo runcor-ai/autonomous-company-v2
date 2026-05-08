@@ -49,15 +49,31 @@ describe('T088: boot.ts try/catch covers every component (FR-011)', () => {
 
   test('no LLM call fires before substrate.installer.install() completes', async () => {
     const src = await getBoot();
-    // Verify that the substrate install + assertInstallerEngaged appear BEFORE any
-    // engine.trigger / engine.callAdapterTool / model.complete usage. Boot orchestrates
-    // construction; the cycle loop in agent/index.ts is what fires the model — boot itself
-    // must not.
+    // Verify boot does NOT trigger flows or call adapter tools at boot time.
+    // The cycle loop in agent/index.ts is what fires LLM calls — boot itself must not.
     expect(src).not.toMatch(/engine\.trigger\(/);
     expect(src).not.toMatch(/engine\.callAdapterTool\(/);
-    expect(src).not.toMatch(/modelRouter\.complete\(/);
-    // The smoke check at boot is allowed to NOT issue a real call (research.md §R4 v0.1
-    // pragmatic: brand probe + isInstalled). assertInstallerEngaged is the cheap check.
+    // boot.ts MAY define a `componentModel` closure that wraps modelRouter.complete (passed
+    // to runcor-data + runcor-integration as their ModelComplete adapter). That closure is
+    // invoked later — during cycles by data-cube ingest + schema discovery — not at boot.
+    // We assert that the ONLY reference to modelRouter.complete is inside the
+    // componentModel definition (which is a const-bound async closure). Any future addition
+    // of a top-level call would also need to add the marker comment, which makes review
+    // load-bearing.
+    const modelRouterRefs = (src.match(/modelRouter\.complete/g) ?? []).length;
+    if (modelRouterRefs > 0) {
+      // All references must appear within the componentModel block. Locate it by its
+      // declaration, capture body up to the closing `};`.
+      const blockStart = src.indexOf('const componentModel = {');
+      expect(blockStart).toBeGreaterThan(0);
+      // Find the closing `};` after the block.
+      const blockEnd = src.indexOf('};', blockStart);
+      expect(blockEnd).toBeGreaterThan(blockStart);
+      const block = src.slice(blockStart, blockEnd);
+      const refsInBlock = (block.match(/modelRouter\.complete/g) ?? []).length;
+      expect(refsInBlock).toBe(modelRouterRefs);
+    }
+    // assertInstallerEngaged is the cheap engagement check (research.md §R4 v0.1 pragmatic).
     expect(src).toMatch(/assertInstallerEngaged\(/);
   });
 
