@@ -86,6 +86,55 @@ export interface RunCyclesArgs {
 
 const DEFAULT_SLEEP = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
+const EXECUTION_COMPLETE_TIMEOUT_MS = 5 * 60 * 1000;
+
+interface ExecutionCompleteResolution {
+  state: 'complete' | 'failed';
+  result?: unknown;
+  error?: unknown;
+}
+
+/**
+ * Wait for the engine's `execution:complete` event matching `executionId`. The engine's
+ * trigger() dispatches the flow handler asynchronously and returns immediately with
+ * exec.result == null; this helper bridges the gap so cycle.ts can read the actual model
+ * response. Timeout is generous (5 min) — the inner OpenRouter call has its own retry +
+ * substrate retry-then-flag, so any genuine model-level hang surfaces well before this.
+ */
+function waitForExecutionComplete(
+  engine: Runcor,
+  executionId: string,
+): Promise<ExecutionCompleteResolution> {
+  return new Promise<ExecutionCompleteResolution>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      // Best-effort: detach handler before rejecting.
+      try {
+        engine.off('execution:complete', handler as Parameters<typeof engine.off>[1]);
+      } catch {
+        // ignore
+      }
+      reject(new Error(`waitForExecutionComplete: timed out after ${EXECUTION_COMPLETE_TIMEOUT_MS}ms (executionId=${executionId})`));
+    }, EXECUTION_COMPLETE_TIMEOUT_MS);
+
+    const handler = (payload: { executionId: string; state: string; result?: unknown; error?: unknown }): void => {
+      if (payload.executionId !== executionId) return;
+      clearTimeout(timer);
+      try {
+        engine.off('execution:complete', handler as Parameters<typeof engine.off>[1]);
+      } catch {
+        // ignore
+      }
+      const state = payload.state === 'failed' ? 'failed' : 'complete';
+      resolve({
+        state,
+        ...(payload.result !== undefined ? { result: payload.result } : {}),
+        ...(payload.error !== undefined ? { error: payload.error } : {}),
+      });
+    };
+    engine.on('execution:complete', handler);
+  });
+}
+
 interface FlagEvent {
   cycle: number;
   flagNodeId?: string;
@@ -205,10 +254,29 @@ export async function runCycles(args: RunCyclesArgs): Promise<{ cyclesRun: numbe
           idempotencyKey: `${args.agentRole}-cycle-${cycle}-${startedAt}`,
           input: { layerContext, userPrompt: args.userPrompt },
         });
-        const result = exec.result as { text?: string; usage?: { promptTokens: number; completionTokens: number } } | undefined;
-        responseText = result?.text ?? '';
-        if (result?.usage) {
-          totalTokens = (result.usage.promptTokens ?? 0) + (result.usage.completionTokens ?? 0);
+        // engine.trigger() dispatches the flow handler asynchronously — it does NOT await
+        // handler completion. exec.result is null until the handler finishes. We have to
+        // wait for the engine's `execution:complete` event matching this execution.id.
+        // Without this wait, cycle.ts records actionInvoked: null on every cycle even when
+        // the model produced a valid response (observed live 2026-05-08 fresh-reset run:
+        // model output {"action": "web_search", ...} but cycle_record had actionInvoked: null
+        // because the handler hadn't run yet).
+        const completion = exec.state === 'complete' || exec.state === 'failed'
+          ? { state: exec.state, result: exec.result, error: exec.error }
+          : await waitForExecutionComplete(args.engine, exec.id);
+        if (completion.state === 'failed') {
+          status = 'cycle_failed_call';
+          failureReason = completion.error instanceof Error
+            ? completion.error.message
+            : typeof completion.error === 'string'
+              ? completion.error
+              : JSON.stringify(completion.error);
+        } else {
+          const result = completion.result as { text?: string; usage?: { promptTokens: number; completionTokens: number } } | undefined;
+          responseText = result?.text ?? '';
+          if (result?.usage) {
+            totalTokens = (result.usage.promptTokens ?? 0) + (result.usage.completionTokens ?? 0);
+          }
         }
       } catch (err) {
         status = 'cycle_failed_call';
