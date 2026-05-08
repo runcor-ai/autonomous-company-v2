@@ -163,13 +163,21 @@ async function performResetOnBoot(
   const sqliteSuffixes = ['.db', '.db-wal', '.db-shm'];
   const targets: string[] = [];
 
+  // CRITICAL: must use the SAME prefix mapping that dbPathFor() uses, otherwise reset
+  // tries to delete files that don't exist while the real ones survive. v2 → 'agent',
+  // control → 'control'. Bug landed once (2026-05-08) where the role name was used
+  // verbatim ('v2-memory.db') and identity + goals persisted across reset, taking the
+  // corrupted self-theory with them. Don't repeat.
+  const dbPrefix = agentRole === 'v2' ? 'agent' : 'control';
+
   // Per-role component DBs.
   for (const base of componentDbBases) {
     for (const suf of sqliteSuffixes) {
-      targets.push(path.join(agentStateDir, `${agentRole}-${base}${suf}`));
+      targets.push(path.join(agentStateDir, `${dbPrefix}-${base}${suf}`));
     }
   }
-  // Per-role cycle/day persistence file.
+  // Per-role cycle/day persistence file. Note: this DOES use agentRole directly because
+  // boot.ts:294 writes `cycle-state-${args.agentRole}.json`, not the prefix.
   targets.push(path.join(agentStateDir, `cycle-state-${agentRole}.json`));
 
   // Role-shared dashboard state. Wiping these on V2 boot is intentional — a reset of V2

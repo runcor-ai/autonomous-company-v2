@@ -48,6 +48,26 @@ describe('RESET_ON_BOOT', () => {
     expect(s).toMatch(/cycle-state-\$\{agentRole\}\.json/);
   });
 
+  test('reset uses dbPathFor prefix mapping (v2 → agent, control → control)', async () => {
+    // Locked because the first attempted reset on Railway used `${agentRole}` directly,
+    // producing v2-memory.db / v2-identity.db etc. — files that don't exist. The real files
+    // are agent-memory.db, agent-identity.db (per dbPathFor at boot.ts:93-97). The wrong
+    // prefix means identity + goals + memory survived the reset, taking the corrupted
+    // self-theory with them. This test enforces the prefix derivation.
+    const s = await load();
+    // Match the canonical mapping: agentRole === 'v2' ? 'agent' : 'control'
+    expect(s).toMatch(/agentRole\s*===\s*['"]v2['"]\s*\?\s*['"]agent['"]\s*:\s*['"]control['"]/);
+    // Targets array assembly must use the prefix variable, not agentRole directly, for the
+    // sibling-DB filenames.
+    expect(s).toMatch(/\$\{dbPrefix\}-\$\{base\}\$\{suf\}/);
+    // Negative: the per-role-component target line must NOT use agentRole directly for DBs.
+    // (cycle-state-${agentRole}.json IS allowed because that file genuinely uses agentRole.)
+    const fnStart = s.indexOf('async function performResetOnBoot(');
+    const fnEnd = s.indexOf('\nexport async function boot(', fnStart);
+    const fnBody = s.slice(fnStart, fnEnd);
+    expect(fnBody).not.toMatch(/\$\{agentRole\}-\$\{base\}/);
+  });
+
   test('reset wipes role-shared dashboard files (bus-events, summaries, rater)', async () => {
     const s = await load();
     expect(s).toMatch(/bus-events\.jsonl/);
