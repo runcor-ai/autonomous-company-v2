@@ -117,23 +117,61 @@ describe('tool result helpers', () => {
 });
 
 describe('terminate tool sets the termination signal', () => {
-  test('handler calls requestTerminate', async () => {
-    let captured = '';
-    const server = createLocalMcpServer({
+  function buildServer(captureRef: { reason: string }) {
+    return createLocalMcpServer({
       env: ENV_STUB,
       memory,
       dataCube,
       agentRole: 'v2',
       context: { cycle: () => 5, dayOfRun: () => 0 },
       requestTerminate: (reason) => {
-        captured = reason;
+        captureRef.reason = reason;
       },
     });
+  }
+
+  test('handler calls requestTerminate when reason is provided', async () => {
+    const captured = { reason: '' };
+    const server = buildServer(captured);
     const terminate = server.tools.find((t) => t.name === 'terminate');
     expect(terminate).toBeDefined();
     const result = await terminate!.handler({ reason: 'experiment complete' });
     expect(result.isError).toBe(false);
-    expect(captured).toBe('experiment complete');
+    expect(captured.reason).toBe('experiment complete');
+  });
+
+  test('terminate with NO args succeeds — reason is optional (FR-050, Principle IV)', async () => {
+    // Live observation 2026-05-08 cycle 213: agent reasoned its way to a defensible
+    // termination decision but called terminate({}) without args. Strict validation rejected
+    // the call → intent lost → cycle continued. Per Principle IV "termination is the
+    // agent's exclusive verb" and FR-050 "no precondition check" — reason is observable
+    // sugar, not a gate.
+    const captured = { reason: '' };
+    const server = buildServer(captured);
+    const terminate = server.tools.find((t) => t.name === 'terminate');
+    const result = await terminate!.handler({});
+    expect(result.isError).toBe(false);
+    // requestTerminate must have fired with a defaulted reason.
+    expect(captured.reason.length).toBeGreaterThan(0);
+    expect(captured.reason).toMatch(/no reason provided/i);
+  });
+
+  test('terminate with empty-string reason still succeeds, default reason recorded', async () => {
+    const captured = { reason: '' };
+    const server = buildServer(captured);
+    const terminate = server.tools.find((t) => t.name === 'terminate');
+    const result = await terminate!.handler({ reason: '   ' });
+    expect(result.isError).toBe(false);
+    expect(captured.reason.length).toBeGreaterThan(0);
+  });
+
+  test('inputSchema does not require `reason` (regression guard)', () => {
+    const captured = { reason: '' };
+    const server = buildServer(captured);
+    const terminate = server.tools.find((t) => t.name === 'terminate');
+    const schema = terminate!.inputSchema as { required?: string[] };
+    // Neither absent nor present-but-listing-reason is acceptable.
+    expect(schema.required ?? []).not.toContain('reason');
   });
 });
 
