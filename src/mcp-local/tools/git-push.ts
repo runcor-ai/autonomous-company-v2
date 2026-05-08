@@ -1,7 +1,11 @@
-// git_push (T064) — commit a file to the agent's public thoughts repo.
+// git_push (T064) — commit a file to a GitHub repository and push.
 //
 // Per contracts/mcp-local-tools.md. Idempotent on path+content (a second call with identical
 // inputs is a no-op git commit because git skips empty diffs).
+//
+// Default target: the agent's configured "thoughts" repo (GIT_PUSH_REPO env). The agent can
+// override per-call with `repo: 'owner/name'` to push to any GitHub repo its token has write
+// access to — useful after creating a new repo via github_create_repo.
 
 import { execFile } from 'node:child_process';
 import { mkdir, writeFile, rm, stat } from 'node:fs/promises';
@@ -18,48 +22,82 @@ interface CloneState {
   repoUrl: string;
 }
 
-let cloneState: CloneState | null = null;
+// Cache one clone per repo URL. Multiple repos → multiple cached clones.
+const cloneStates: Map<string, CloneState> = new Map();
 
 async function ensureClone(repoUrl: string, token: string): Promise<string> {
-  if (cloneState && cloneState.repoUrl === repoUrl) {
+  const cached = cloneStates.get(repoUrl);
+  if (cached) {
     try {
-      await stat(path.join(cloneState.dir, '.git'));
+      await stat(path.join(cached.dir, '.git'));
       // Pull latest before each push to reduce conflict risk.
-      await exec('git', ['-C', cloneState.dir, 'pull', '--rebase', '--autostash'], { timeout: 30_000 });
-      return cloneState.dir;
+      await exec('git', ['-C', cached.dir, 'pull', '--rebase', '--autostash'], { timeout: 30_000 });
+      return cached.dir;
     } catch {
-      cloneState = null;
+      cloneStates.delete(repoUrl);
     }
   }
 
-  const dir = path.join(os.tmpdir(), `runcor-v2-thoughts-${Date.now()}`);
+  const dir = path.join(os.tmpdir(), `runcor-v2-git-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
   await mkdir(dir, { recursive: true });
   // Embed token in URL: https://x-access-token:<token>@github.com/...
   const authedUrl = repoUrl.replace(/^https:\/\//, `https://x-access-token:${token}@`);
   await exec('git', ['clone', authedUrl, dir], { timeout: 60_000 });
   await exec('git', ['-C', dir, 'config', 'user.email', 'agent@runcor.ai'], { timeout: 5_000 });
   await exec('git', ['-C', dir, 'config', 'user.name', 'runcor agent'], { timeout: 5_000 });
-  cloneState = { dir, repoUrl };
+  cloneStates.set(repoUrl, { dir, repoUrl });
   return dir;
+}
+
+/** Resolve the repo URL: prefer the per-call argument, fall back to the env default. */
+function resolveRepoUrl(repoArg: string | undefined, defaultUrl: string | undefined): string | null {
+  if (repoArg && repoArg.length > 0) {
+    // Accept either "owner/name" or full URL.
+    if (repoArg.match(/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/)) {
+      return `https://github.com/${repoArg}.git`;
+    }
+    if (repoArg.match(/^https:\/\/github\.com\/[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+(\.git)?$/)) {
+      return repoArg.endsWith('.git') ? repoArg : `${repoArg}.git`;
+    }
+    return null;
+  }
+  if (defaultUrl) {
+    if (defaultUrl.match(/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/)) {
+      return `https://github.com/${defaultUrl}.git`;
+    }
+    return defaultUrl.endsWith('.git') ? defaultUrl : `${defaultUrl}.git`;
+  }
+  return null;
 }
 
 export const gitPush: LocalToolFactory = (deps) => ({
   name: 'git_push',
-  description: "Commit a file to the agent's public thoughts repo and push.",
+  description:
+    "Commit a file to a GitHub repository and push. Default target is the agent's configured thoughts repo. Pass `repo: 'owner/name'` to push to a different repo (you must have write access — typically a repo you created via github_create_repo).",
   inputSchema: {
     type: 'object',
     properties: {
       path: { type: 'string', pattern: '^[a-zA-Z0-9_\\-/.]+$' },
       content: { type: 'string', maxLength: 50_000 },
       commitMessage: { type: 'string', minLength: 1, maxLength: 500 },
+      repo: {
+        type: 'string',
+        description: 'Optional. Full path "owner/name" or HTTPS URL. Defaults to GIT_PUSH_REPO.',
+      },
     },
     required: ['path', 'content', 'commitMessage'],
   },
   handler: async (args) => {
-    const repoUrl = deps.env.gitPushRepo;
     const token = deps.env.gitPushToken;
-    if (!repoUrl || !token) {
-      return errResult('git_unconfigured', { hint: 'GIT_PUSH_REPO/GIT_PUSH_TOKEN not set' });
+    if (!token) {
+      return errResult('git_unconfigured', { hint: 'GIT_PUSH_TOKEN not set' });
+    }
+    const repoArg = typeof args.repo === 'string' ? args.repo : undefined;
+    const repoUrl = resolveRepoUrl(repoArg, deps.env.gitPushRepo);
+    if (!repoUrl) {
+      return errResult('repo_unresolved', {
+        hint: 'Provide repo as "owner/name", or set GIT_PUSH_REPO in env.',
+      });
     }
 
     const filePath = typeof args.path === 'string' ? args.path : '';
@@ -82,16 +120,17 @@ export const gitPush: LocalToolFactory = (deps) => ({
 
       await exec('git', ['-C', dir, 'commit', '-m', commitMessage], { timeout: 10_000 });
       await exec('git', ['-C', dir, 'push', 'origin', 'HEAD'], { timeout: 60_000 });
-      return okResult({ pushed: true, path: filePath });
+      return okResult({ pushed: true, path: filePath, repo: repoUrl });
     } catch (err) {
-      // Reset the cached clone on failure so the next call re-clones cleanly.
-      if (cloneState) {
+      // Reset the cached clone for THIS repo on failure so the next call re-clones cleanly.
+      const failed = cloneStates.get(repoUrl);
+      if (failed) {
         try {
-          await rm(cloneState.dir, { recursive: true, force: true });
+          await rm(failed.dir, { recursive: true, force: true });
         } catch {
           // ignore
         }
-        cloneState = null;
+        cloneStates.delete(repoUrl);
       }
       return errResult(err instanceof Error ? err.message : 'git_failure');
     }

@@ -18,6 +18,8 @@ import { firecrawlScrape } from './tools/firecrawl-scrape.js';
 import { inboxRead } from './tools/inbox-read.js';
 import { emailSend } from './tools/email-send.js';
 import { gitPush } from './tools/git-push.js';
+import { githubCreateRepo } from './tools/github-create-repo.js';
+import { githubCreateIssue } from './tools/github-create-issue.js';
 import { fsRead } from './tools/fs-read.js';
 import { fsWrite } from './tools/fs-write.js';
 import { fetchChunk } from './tools/fetch-chunk.js';
@@ -26,15 +28,19 @@ import { publishPost } from './tools/publish-post.js';
 import { terminate } from './tools/terminate.js';
 
 /**
- * Canonical tool registry, in the order they appear in `contracts/mcp-local-tools.md`.
- * Each factory is invoked once at boot with the full deps bag; the returned tool definitions
- * are bundled into a single `AdapterConfig` for `engine.addAdapter`.
+ * Canonical tool registry. Each factory is invoked once at boot with the full deps bag;
+ * the returned tool definitions are bundled into a single `AdapterConfig` for
+ * `engine.addAdapter`. GitHub tools (git_push, github_create_repo, github_create_issue)
+ * grouped together so their related affordances surface adjacently in the capability
+ * layer.
  */
 export const LOCAL_TOOL_FACTORIES: LocalToolFactory[] = [
   firecrawlScrape,
   inboxRead,
   emailSend,
   gitPush,
+  githubCreateRepo,
+  githubCreateIssue,
   fsRead,
   fsWrite,
   fetchChunk,

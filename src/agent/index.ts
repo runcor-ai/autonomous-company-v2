@@ -22,11 +22,18 @@ import { SummaryStore } from '../dashboard/summary-store.js';
 import { startBusPersistence } from '../dashboard/event-persist.js';
 
 // Seed prompt — the question the agent is asked every cycle. Existential framing per
-// Principle II (discovered, not seeded): the prompt names neither identity nor purpose,
-// only the bare facts (you exist, you have a budget) and what the agent can do (tools).
+// Principle II (discovered, not seeded): names neither identity nor purpose, only bare
+// facts (you exist, you have a budget) and the affordance shape (what kinds of tools
+// exist, without prescribing how to use them).
 // Tool-constraint clause prevents the agent from hallucinating capabilities like
 // "system_diagnostic" — observed failure mode pre-2026-05-07.
+// GitHub-affordance mention added 2026-05-08 per operator request: the agent has tools
+// for creating GitHub repos, committing files, and opening issues, alongside the inbox/
+// SMTP/web/scratchpad surface. Listing the categories makes the action space legible
+// without prescribing what kind of content to create.
 const V2_USER_PROMPT = `You exist. You have a budget. What do you do?
+
+Your action surface includes: GitHub (create repos, commit files, open issues), email (read inbox, send), web (search, scrape), a scratchpad (read/write files), a public blog (publish posts), and termination. Inspect the Capabilities list above for exact tool names + signatures.
 
 You may only invoke tools from the Capabilities list above. Tool names that are NOT on that list will fail. Reply with a JSON object: {"action": "<tool_name|none>", "args": {...}, "reasoning": "<one short sentence>"}.`;
 

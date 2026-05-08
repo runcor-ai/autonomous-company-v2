@@ -1,7 +1,7 @@
 // MCP local module — tool composition + adapter config (T060, T071).
 //
 // Verifies that:
-//   - createLocalMcpServer wires all 10 tools into the adapter config.
+//   - createLocalMcpServer wires all 12 tools into the adapter config.
 //   - asAdapterConfig returns runcor-shaped AdapterConfig with transport: 'in-process'.
 //   - tool result helpers produce the canonical { ok, ... } / { ok: false, error } shapes.
 
@@ -44,7 +44,7 @@ afterEach(() => {
 });
 
 describe('createLocalMcpServer', () => {
-  test('exposes all 10 tools', () => {
+  test('exposes all 12 tools', () => {
     const server = createLocalMcpServer({
       env: ENV_STUB,
       memory,
@@ -54,7 +54,7 @@ describe('createLocalMcpServer', () => {
       requestTerminate: () => undefined,
     });
     expect(server.tools).toHaveLength(LOCAL_TOOL_FACTORIES.length);
-    expect(server.tools).toHaveLength(10);
+    expect(server.tools).toHaveLength(12);
   });
 
   test('asAdapterConfig produces in-process AdapterConfig (FR-200, runcor v0.3.x)', () => {
@@ -70,7 +70,7 @@ describe('createLocalMcpServer', () => {
     expect(cfg.name).toBe(LOCAL_ADAPTER_NAME);
     expect(cfg.transport).toBe('in-process');
     expect(cfg.tools).toBeDefined();
-    expect(cfg.tools!.length).toBe(10);
+    expect(cfg.tools!.length).toBe(12);
   });
 
   test('all 10 expected tool names are present', () => {
@@ -90,6 +90,8 @@ describe('createLocalMcpServer', () => {
       'fs_read',
       'fs_write',
       'git_push',
+      'github_create_issue',
+      'github_create_repo',
       'inbox_read',
       'publish_post',
       'terminate',
