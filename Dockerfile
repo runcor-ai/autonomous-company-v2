@@ -44,6 +44,18 @@ RUN for r in runcor runcor-substrate runcor-memory runcor-data runcor-integratio
     done && \
     ls -d /workspace/autonomous-company-v2/node_modules/runcor* /workspace/autonomous-company-v2/node_modules/rpp-parser
 
+# Ensure runcor-data can resolve `await import('runcor-memory')` from inside its compiled
+# pipeline. The cp -r above replaces node_modules/runcor-data with the cloned sibling. If
+# the per-sibling `npm install` (top of file) didn't populate runcor-data's nested
+# runcor-memory (observed live 2026-05-08 cycles 119-150 — github URL fetch likely hoisted
+# rather than nested), the runtime import fails. Force-copy V2's top-level runcor-memory
+# into runcor-data's node_modules so the nested resolution path always exists.
+RUN rm -rf /workspace/autonomous-company-v2/node_modules/runcor-data/node_modules/runcor-memory && \
+    mkdir -p /workspace/autonomous-company-v2/node_modules/runcor-data/node_modules && \
+    cp -r /workspace/autonomous-company-v2/node_modules/runcor-memory \
+          /workspace/autonomous-company-v2/node_modules/runcor-data/node_modules/runcor-memory && \
+    ls /workspace/autonomous-company-v2/node_modules/runcor-data/node_modules/runcor-memory/dist/index.js
+
 RUN npm run build
 
 # Persistent state (Railway-volume mount lives here).
