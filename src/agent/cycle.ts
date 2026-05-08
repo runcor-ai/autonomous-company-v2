@@ -362,6 +362,21 @@ export async function runCycles(args: RunCyclesArgs): Promise<{ cyclesRun: numbe
           sideEffects.goalProposalsAccepted +
           (sideEffects.skillSynthesized ? 1 : 0);
         dataIngestEvents = sideEffects.dataIngestEvents;
+        // Surface side-effects errors. Pre-2026-05-08 these were collected into
+        // result.errors and silently dropped — we lost weeks of dataCube.ingest failures
+        // that way. Log to stderr (Railway captures) AND emit to bus so the dashboard
+        // /transcript shows them.
+        if (sideEffects.errors.length > 0) {
+          for (const e of sideEffects.errors) {
+            // eslint-disable-next-line no-console
+            console.error(`[cycle ${cycle}] side-effect ${e.step} failed: ${e.error}`);
+          }
+          args.bus.emit('side_effect_error', {
+            cycle,
+            agentRole: args.agentRole,
+            errors: sideEffects.errors,
+          });
+        }
       }
 
       const endedAt = Date.now();
