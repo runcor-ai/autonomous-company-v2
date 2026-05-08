@@ -48,5 +48,9 @@
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"
   },
+  "overrides": {
+    "runcor-memory": "file:../runcor-memory"
+  },
+  "// overrides": "Force runcor-memory to resolve from V2's local file:../runcor-memory everywhere in the tree — including nested under runcor-data. runcor-data's package.json declares runcor-memory as a github:runcor-ai/runcor-memory dep; without this override Railway's build can leave runcor-data with an empty nested node_modules and `await import('runcor-memory')` from runcor-data/dist/pipeline.js fails with 'Cannot find package'. Observed live 2026-05-08 cycle 68/70 — silent data_ingest failures while V2 had a working runcor-memory at the workspace root.",
   "//": "v0.2.0 — full 14-component cognitive harness. All 14 siblings pinned at the V2-002 versions (substrate 0.2.0, runcor 0.3.0, runcor-data 0.2.0, runcor-temporal 0.2.0, runcor-identity/goals/coherence 0.2.0, runcor-integration 0.2.0)."
 }
