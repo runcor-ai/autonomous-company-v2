@@ -25,6 +25,16 @@ const IDENTITY_REFLECT_EVERY = 20;
 const GOAL_PROPOSE_EVERY = 10;
 const SKILL_SYNTHESIZE_EVERY = 50;
 
+// Readiness gates — both goals.propose() and identity.reflect() synthesize from inputs.
+// When the data cube is empty (no world-anchored entities) the dialectic has nothing real
+// to reason about and produces self-referential output: navel-gazing goals + self-isolating
+// identity claims. Observed live 2026-05-07 — cycle 1631 had a self-theory that explicitly
+// forbade outward actions, crystallized from 20 cycles of inactivity. Symmetric to FR-076b
+// (MemoryRecall renders empty when there's nothing to recall) — cognitive synthesis steps
+// that can't synthesize honestly should not synthesize at all.
+const MIN_DATA_ENTITIES_FOR_GOAL_PROPOSE = 3;
+const MIN_DATA_ENTITIES_FOR_IDENTITY_REFLECT = 5;
+
 export interface ActionInvocation {
   name: string;
   args: Record<string, unknown>;
@@ -114,9 +124,28 @@ export async function runSideEffects(args: SideEffectsArgs): Promise<SideEffects
     }
   }
 
-  // C3. Identity reflection (cadence).
+  // Data-cube entity count drives both readiness gates below. Cheap stat call.
+  const dataEntityCount = (() => {
+    try {
+      return args.dataCube.getStats().entities;
+    } catch {
+      return 0;
+    }
+  })();
+
+  // C3. Identity reflection (cadence + readiness gate).
+  // Skip when the data cube is empty: identity reflected from inaction crystallizes the
+  // inaction as a value ("I refrain from external actions to preserve focus") which then
+  // self-reinforces forever. Identity needs world-anchored evidence to reflect honestly.
   const dialecticLike = DIALECTIC_LIKE(args.dialectic);
-  if (args.identity && dialecticLike && args.cycle > 0 && args.cycle % IDENTITY_REFLECT_EVERY === 0) {
+  const identityReadyToReflect = dataEntityCount >= MIN_DATA_ENTITIES_FOR_IDENTITY_REFLECT;
+  if (
+    args.identity &&
+    dialecticLike &&
+    args.cycle > 0 &&
+    args.cycle % IDENTITY_REFLECT_EVERY === 0 &&
+    identityReadyToReflect
+  ) {
     try {
       await args.identity.reflect({
         recentActions: args.recentActionRecords,
@@ -131,8 +160,19 @@ export async function runSideEffects(args: SideEffectsArgs): Promise<SideEffects
     }
   }
 
-  // C4. Goal proposals + acceptance (cadence).
-  if (args.goals && dialecticLike && args.cycle > 0 && args.cycle % GOAL_PROPOSE_EVERY === 0) {
+  // C4. Goal proposals + acceptance (cadence + readiness gate).
+  // Skip when the data cube is empty: proposals from a void produce navel-gazing goals
+  // ("audit yourself", "document capabilities") that anchor every later cycle's MemoryRecall.
+  // Once the agent has at least N world-anchored entities, the dialectic has real material
+  // to ground proposals.
+  const goalsReadyToPropose = dataEntityCount >= MIN_DATA_ENTITIES_FOR_GOAL_PROPOSE;
+  if (
+    args.goals &&
+    dialecticLike &&
+    args.cycle > 0 &&
+    args.cycle % GOAL_PROPOSE_EVERY === 0 &&
+    goalsReadyToPropose
+  ) {
     try {
       const proposals = await args.goals.propose({
         recentActions: args.recentActionRecords.map((r) => ({ action: r.action })),
