@@ -297,7 +297,14 @@ export async function boot(args: BootArgs): Promise<BootedHarness> {
   //      wraps its output in prose ("Here's the classification: { ... } — confidence is ...").
   const COMPONENT_MODEL = 'anthropic/claude-3.5-haiku';
 
-  /** Extract first balanced JSON object from text. Returns null if no balanced { } found. */
+  /**
+   * Extract first JSON object from text. Returns the balanced { ... } when found.
+   * When the text is TRUNCATED mid-structure (model output ran out of tokens), repairs by
+   * synthesizing closing quote + closing braces — better to ingest a slightly-incomplete
+   * object than to fail the whole pipeline. Observed live 2026-05-08: even claude-3.5-haiku
+   * with maxTokens:1000 produced 3500+ char outputs that ended mid-string-value when given
+   * a normalize spec + 4000-char raw_text input.
+   */
   const extractFirstJson = (text: string): string | null => {
     const start = text.indexOf('{');
     if (start < 0) return null;
@@ -316,7 +323,35 @@ export async function boot(args: BootArgs): Promise<BootedHarness> {
         if (depth === 0) return text.slice(start, i + 1);
       }
     }
-    return null;
+    // Truncation repair: walked to end of text without closing the outermost brace.
+    // Synthesize closing quote (if mid-string) + closing braces (one per unclosed depth)
+    // to produce something JSON.parse can accept. The final structured field may be partial
+    // but the consumer's pipeline gets to proceed instead of erroring on every cycle.
+    let repaired = text.slice(start);
+    if (inString) repaired += '"';
+    while (depth > 0) {
+      repaired += '}';
+      depth -= 1;
+    }
+    // Final defensive check: try parsing; if still broken (e.g., trailing comma), give up.
+    try {
+      JSON.parse(repaired);
+      return repaired;
+    } catch {
+      // Strip likely-trailing-comma or partial-key and retry once.
+      const lastComma = repaired.lastIndexOf(',');
+      const lastOpenBrace = repaired.lastIndexOf('{');
+      if (lastComma > lastOpenBrace && lastComma >= 0) {
+        const candidate = repaired.slice(0, lastComma) + repaired.slice(lastComma + 1);
+        try {
+          JSON.parse(candidate);
+          return candidate;
+        } catch {
+          // fall through
+        }
+      }
+      return null;
+    }
   };
 
   const componentModel = {
