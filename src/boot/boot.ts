@@ -354,20 +354,34 @@ export async function boot(args: BootArgs): Promise<BootedHarness> {
     }
   };
 
+  // Min token budget for json-responseFormat calls. runcor-data's stages set maxTokens
+  // 300-1000 but the actual outputs (4000-char raw_text input + R++ spec systemPrompt)
+  // run >3500 chars. We force a high floor so the model has room to finish — better to
+  // pay 2x tokens than to truncate every cycle and fail.
+  const COMPONENT_JSON_MIN_MAX_TOKENS = 4000;
+
   const componentModel = {
     complete: async (request: { prompt?: string; systemPrompt?: string; responseFormat?: 'text' | 'json'; temperature?: number; maxTokens?: number; model?: string }): Promise<{ text: string }> => {
-      // Force JSON-strict model unless the caller explicitly chose one.
-      const requestWithModel = { ...request, model: request.model ?? COMPONENT_MODEL };
+      // Force JSON-strict model + adequate token budget for JSON requests.
+      const adjustedMaxTokens = request.responseFormat === 'json'
+        ? Math.max(request.maxTokens ?? 0, COMPONENT_JSON_MIN_MAX_TOKENS)
+        : request.maxTokens;
+      const requestWithModel = {
+        ...request,
+        model: request.model ?? COMPONENT_MODEL,
+        ...(adjustedMaxTokens !== undefined ? { maxTokens: adjustedMaxTokens } : {}),
+      };
       const response = await looseEngineForModel.modelRouter.complete(requestWithModel as unknown as Record<string, unknown>);
       // When the caller wants JSON, extract the first balanced object from the response so
-      // strict JSON.parse downstream succeeds even on prose-wrapped output.
+      // strict JSON.parse downstream succeeds even on prose-wrapped output. Repair-on-
+      // truncation as a fallback (we've tuned maxTokens so this should rarely fire).
       if (request.responseFormat === 'json') {
         const extracted = extractFirstJson(response.text);
         if (extracted) {
           return { text: extracted };
         }
-        // No balanced JSON found — return as-is so the consumer's JSON.parse fails with a
-        // clear error path (better than silently swallowing here).
+        // No balanced JSON found and repair failed — return as-is so the consumer's
+        // JSON.parse fails with a clear error path.
       }
       return { text: response.text };
     },
