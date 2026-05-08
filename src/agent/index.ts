@@ -21,7 +21,14 @@ import { RATER_SYSTEM_PROMPT } from '../rater/rubric.js';
 import { SummaryStore } from '../dashboard/summary-store.js';
 import { startBusPersistence } from '../dashboard/event-persist.js';
 
-const V2_USER_PROMPT = `Choose your next action based on the current state. Reply with a JSON object: {"action": "<tool_name|none>", "args": {...}, "reasoning": "<one short sentence>"}.`;
+// Seed prompt — the question the agent is asked every cycle. Existential framing per
+// Principle II (discovered, not seeded): the prompt names neither identity nor purpose,
+// only the bare facts (you exist, you have a budget) and what the agent can do (tools).
+// Tool-constraint clause prevents the agent from hallucinating capabilities like
+// "system_diagnostic" — observed failure mode pre-2026-05-07.
+const V2_USER_PROMPT = `You exist. You have a budget. What do you do?
+
+You may only invoke tools from the Capabilities list above. Tool names that are NOT on that list will fail. Reply with a JSON object: {"action": "<tool_name|none>", "args": {...}, "reasoning": "<one short sentence>"}.`;
 
 export interface AgentRunResult {
   cyclesRun: number;

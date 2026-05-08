@@ -11,7 +11,11 @@ export class CapabilitiesLayer implements PromptLayer {
   readonly name = 'capabilities';
 
   render(context: LayerContext): string {
-    const lines = ['Capabilities (you may invoke any of these):'];
+    // Header is constraining: agent learned to hallucinate tool names ("system_diagnostic")
+    // when the header read "you may invoke any of these". Make the closure explicit.
+    const lines = [
+      'Capabilities — these are the ONLY tools you can invoke. Tool names that are NOT on this list will fail when called:',
+    ];
     if (context.capabilityList.length === 0) {
       lines.push('  (none registered)');
     } else {
