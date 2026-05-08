@@ -284,20 +284,56 @@ export async function boot(args: BootArgs): Promise<BootedHarness> {
   // engine.modelRouter is TS-private at compile time but accessible at runtime (the substrate
   // installer reads it the same way). Cast to bypass the visibility check.
   const looseEngineForModel = engine as unknown as { modelRouter: { complete: (req: Record<string, unknown>) => Promise<{ text: string }> } };
-  // Component pipelines (DataCube identify/normalize/conflict + integration schema discovery)
-  // do strict JSON.parse on responses. The default 'openrouter/auto' router lands on
-  // gemini-2.5-flash-lite which produced prose-wrapped or truncated JSON under the
-  // substrate-prepended Laws+Reality systemPrompt — observed live 2026-05-08 (cycle 56–61
-  // failed with "Unterminated string in JSON at position 3545"). Force a model with strong
-  // JSON adherence for these calls. claude-3.5-haiku is the right balance: ~10× the cost of
-  // flash-lite (~$1/1M tokens) but produces strict JSON reliably.
+  // Component pipelines (DataCube identify/normalize/relate/conflict + integration schema
+  // discovery) do strict `JSON.parse(response.text)` in 4 stages. The default 'openrouter/auto'
+  // router lands on gemini-2.5-flash-lite which produced prose-wrapped or truncated JSON under
+  // the substrate-prepended Laws+Reality systemPrompt — observed live 2026-05-08 (cycle 56-61
+  // failed with "Unterminated string in JSON at position 3545"). Even haiku failed because
+  // model output was ~3500 chars under various stages' token caps + the substrate's prepended
+  // systemPrompt. Two layers of defense:
+  //   1. Force claude-3.5-haiku (strong JSON adherence, ~10× cost of flash-lite ~ $1/1M tokens)
+  //   2. JSON extraction in this wrapper — pull the first balanced { ... } block from text
+  //      before returning, so downstream JSON.parse always sees clean input even if the model
+  //      wraps its output in prose ("Here's the classification: { ... } — confidence is ...").
   const COMPONENT_MODEL = 'anthropic/claude-3.5-haiku';
+
+  /** Extract first balanced JSON object from text. Returns null if no balanced { } found. */
+  const extractFirstJson = (text: string): string | null => {
+    const start = text.indexOf('{');
+    if (start < 0) return null;
+    let depth = 0;
+    let inString = false;
+    let escape = false;
+    for (let i = start; i < text.length; i++) {
+      const c = text[i];
+      if (escape) { escape = false; continue; }
+      if (c === '\\') { escape = true; continue; }
+      if (c === '"') { inString = !inString; continue; }
+      if (inString) continue;
+      if (c === '{') depth += 1;
+      else if (c === '}') {
+        depth -= 1;
+        if (depth === 0) return text.slice(start, i + 1);
+      }
+    }
+    return null;
+  };
+
   const componentModel = {
     complete: async (request: { prompt?: string; systemPrompt?: string; responseFormat?: 'text' | 'json'; temperature?: number; maxTokens?: number; model?: string }): Promise<{ text: string }> => {
-      // Force the JSON-strict model unless the caller explicitly chose one. Data-cube +
-      // integration never specify model, so this defaults the entire component-side path.
+      // Force JSON-strict model unless the caller explicitly chose one.
       const requestWithModel = { ...request, model: request.model ?? COMPONENT_MODEL };
       const response = await looseEngineForModel.modelRouter.complete(requestWithModel as unknown as Record<string, unknown>);
+      // When the caller wants JSON, extract the first balanced object from the response so
+      // strict JSON.parse downstream succeeds even on prose-wrapped output.
+      if (request.responseFormat === 'json') {
+        const extracted = extractFirstJson(response.text);
+        if (extracted) {
+          return { text: extracted };
+        }
+        // No balanced JSON found — return as-is so the consumer's JSON.parse fails with a
+        // clear error path (better than silently swallowing here).
+      }
       return { text: response.text };
     },
   };

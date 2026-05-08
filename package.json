@@ -10,7 +10,8 @@
     "build": "tsc -p tsconfig.json",
     "start": "node --enable-source-maps -r dotenv/config dist/main.js",
     "preflight": "node --enable-source-maps -r dotenv/config dist/scripts/preflight.js",
-    "lint": "tsx src/shared/lints/check.ts"
+    "lint": "tsx src/shared/lints/check.ts",
+    "postinstall": "node scripts/postinstall-runcor-memory.mjs"
   },
   "keywords": ["agent", "emergence", "primordial", "cognitive-harness", "runcor", "experiment"],
   "author": "runcor <hello@runcor.ai>",
