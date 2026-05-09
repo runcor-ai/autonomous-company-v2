@@ -427,6 +427,10 @@ export async function boot(args: BootArgs): Promise<BootedHarness> {
       // eslint-disable-next-line no-console
       console.log(`[boot:seed] role=${args.seed.target} loaded from ${args.seed.sourcePath} — ${args.seed.allowedTools.size} allowed tools`);
     }
+    // Temporal context — wall clock + cycle + day. Without this, model hallucinates dates
+    // from pretraining and treats every cycle as "the first cycle of the day."
+    const { TemporalContextLayer } = await import('../substrate-layers/temporal-context.js');
+    layers.push(new TemporalContextLayer(() => dayAccessor.get()));
     layers.push(
       new V2RealityLayer(),
       new DrivesLayer(),
