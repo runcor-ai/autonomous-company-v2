@@ -20,6 +20,7 @@ import { RaterStore } from '../rater/store.js';
 import { RATER_SYSTEM_PROMPT } from '../rater/rubric.js';
 import { SummaryStore } from '../dashboard/summary-store.js';
 import { startBusPersistence } from '../dashboard/event-persist.js';
+import { startStateArchiver } from '../backup/state-archiver.js';
 
 // Seed prompt — the question the agent is asked every cycle. Existential framing per
 // Principle II (discovered, not seeded): names neither identity nor purpose, only bare
@@ -53,6 +54,28 @@ export async function runAgent(): Promise<AgentRunResult> {
     bus: harness.bus,
     filePath: `${harness.env.agentStateDir}/bus-events.jsonl`,
   });
+
+  // Per-cycle remote backup to GitHub. Survives ANY local-volume failure (RESET_ON_BOOT,
+  // volume deletion, container loss). Each cycle's snapshot lands as a permanent commit.
+  // Awaited so handlers are wired BEFORE cycles start — no missed cycle_record events.
+  // If init fails, the agent still boots; failures are logged.
+  if (harness.env.gitPushRepo && harness.env.gitPushToken) {
+    const bootIso = new Date().toISOString().replace(/[:.]/g, '-');
+    try {
+      await startStateArchiver({
+        bus: harness.bus,
+        gitPushRepo: harness.env.gitPushRepo,
+        gitPushToken: harness.env.gitPushToken,
+        bootIso,
+      });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[archiver] init failed — cycles will run unarchived:', err instanceof Error ? err.message : err);
+    }
+  } else {
+    // eslint-disable-next-line no-console
+    console.warn('[archiver] disabled — GIT_PUSH_REPO + GIT_PUSH_TOKEN not configured');
+  }
 
   // Mutable handles for control's memory + dataCube + cycle accessor — populated when
   // control boots. Dashboard reads these via getter closures so /memory?role=control,
