@@ -33,7 +33,7 @@ import { OperatorPauseState } from '../dashboard/operator-pause-state.js';
 // for creating GitHub repos, committing files, and opening issues, alongside the inbox/
 // SMTP/web/scratchpad surface. Listing the categories makes the action space legible
 // without prescribing what kind of content to create.
-const V2_USER_PROMPT = `You exist. You have a budget. What do you do?
+const V2_USER_PROMPT = `You exist. What do you do?
 
 Your action surface includes: GitHub (create repos, commit files, open issues), email (read inbox, send), web (search, scrape), a scratchpad (read/write files), a public blog (publish posts), and termination. Inspect the Capabilities list above for exact tool names + signatures.
 
