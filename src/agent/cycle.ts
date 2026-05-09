@@ -71,6 +71,8 @@ export interface RunCyclesArgs {
   /** Returns true while operator has paused this role. The cycle loop polls this at the
    *  top of each iteration and sleeps in 5s ticks until it clears (or agent terminates). */
   isPaused?: () => boolean;
+  /** Optional allowed-tool filter forwarded into buildLayerContext. Empty/absent = void mode. */
+  allowedTools?: Set<string>;
   /** Optional fixed sleep override (ms). When set, used in place of temporal.computeNextWake. */
   fixedSleepMs?: number;
   /** Optional start cycle override (resume support). Defaults to 0. */
@@ -250,6 +252,7 @@ export async function runCycles(args: RunCyclesArgs): Promise<{ cyclesRun: numbe
         dataCube: args.dataCube,
         goals: args.goals,
         drivePressure,
+        ...(args.allowedTools ? { allowedTools: args.allowedTools } : {}),
       });
 
       args.bus.emit('prompt_assembled', {

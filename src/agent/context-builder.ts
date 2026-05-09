@@ -30,6 +30,10 @@ export interface BuildLayerContextArgs {
   goals: Goals | null;
   /** Current drive pressures, computed by the cycle code from the drives module. */
   drivePressure: DrivePressure;
+  /** Role seed's allowed-tool set. When non-empty, capabilityList is filtered to only
+   *  include tools whose bare name (last `.`-separated segment) is in this set. Empty/absent
+   *  = void mode, no filter applied. */
+  allowedTools?: Set<string>;
 }
 
 export interface BuildLayerContextResult {
@@ -123,11 +127,20 @@ export async function buildLayerContext(args: BuildLayerContextArgs): Promise<Bu
   const identitySelfTheory = getIdentitySelfTheory(memory);
 
   // sibling-bindings.md §A6 — capabilities from the engine adapter view.
+  // When a seed restricts tools, filter on the bare name (last `.`-separated segment).
+  // E.g. allowedTools={"inbox_read"} matches "v2-local-actions.inbox_read".
   const adapterTools = engine.listAdapterTools();
-  const capabilityList = adapterTools.map((t) => ({
-    name: t.qualifiedName,
-    description: t.description ?? '',
-  }));
+  const allowed = args.allowedTools;
+  const capabilityList = adapterTools
+    .filter((t) => {
+      if (!allowed || allowed.size === 0) return true;
+      const bare = t.qualifiedName.split('.').pop() ?? t.qualifiedName;
+      return allowed.has(bare) || allowed.has(t.qualifiedName);
+    })
+    .map((t) => ({
+      name: t.qualifiedName,
+      description: t.description ?? '',
+    }));
 
   // sibling-bindings.md §A7 — reality slice from runcor-data.
   let realitySlice: LayerContext['realitySlice'] = null;

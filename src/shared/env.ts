@@ -40,6 +40,9 @@ export interface V2Env {
   cycleRecordBufferSize: number;
   /** Reset-on-boot flag (clears all state). */
   resetOnBoot: boolean;
+  /** Optional role seed (e.g. "ceo"). When set, V2 loads `seeds/<value>.rpp` and runs as that role.
+   *  Unset = void-seed mode (the original "You exist. What do you do?" prompt). */
+  agentSeed?: string;
 }
 
 class EnvError extends Error {
@@ -102,6 +105,9 @@ export function loadV2Env(): V2Env {
     cycleRecordBufferSize: intEnv('CYCLE_RECORD_BUFFER_SIZE', 1000),
     resetOnBoot: boolEnv('RESET_ON_BOOT'),
   };
+
+  const seed = optEnv('AGENT_SEED');
+  if (seed) env.agentSeed = seed;
 
   if (optEnv('FIRECRAWL_API_KEY')) {
     env.firecrawlApiKey = optEnv('FIRECRAWL_API_KEY');

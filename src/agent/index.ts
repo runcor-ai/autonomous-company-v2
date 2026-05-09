@@ -22,6 +22,7 @@ import { SummaryStore } from '../dashboard/summary-store.js';
 import { startBusPersistence } from '../dashboard/event-persist.js';
 import { startStateArchiver } from '../backup/state-archiver.js';
 import { OperatorPauseState } from '../dashboard/operator-pause-state.js';
+import { loadSeed } from '../seeds/loader.js';
 
 // Seed prompt — the question the agent is asked every cycle. Existential framing per
 // Principle II (discovered, not seeded): names neither identity nor purpose, only bare
@@ -49,7 +50,10 @@ export interface AgentRunResult {
 }
 
 export async function runAgent(): Promise<AgentRunResult> {
-  const harness: BootedHarness = await boot({ agentRole: 'v2' });
+  // Load optional role seed BEFORE boot so the SeedLayer joins the prompt stack at construction.
+  // AGENT_SEED unset → seed=null → V2 runs in void mode (current default).
+  const seed = loadSeed(process.env.AGENT_SEED);
+  const harness: BootedHarness = await boot({ agentRole: 'v2', ...(seed ? { seed } : {}) });
 
   // Persist bus events to disk so the transcript pane survives redeploys.
   // Hydrates the bus on boot, appends each new event, prunes periodically.
@@ -404,6 +408,7 @@ Keep total under 200 words. No preamble. Do NOT just restate the prior summary �
       budgetUsd: harness.env.v2BudgetUsd,
       isTerminated: harness.terminationState.isTerminated,
       isPaused: () => operatorPause.isPaused('v2'),
+      ...(seed && seed.allowedTools.size > 0 ? { allowedTools: seed.allowedTools } : {}),
       // Resume from the persisted cycle counter so redeploys don't reset to 0.
       startCycle: harness.cycleAccessor.get(),
       onCycleAdvance: (c: number) => harness.cycleAccessor.set(c),

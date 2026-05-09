@@ -54,6 +54,9 @@ export interface BootArgs {
   cognitiveDisabled?: boolean;
   /** Reachable schema sources for runcor-integration discovery (FR-090). Empty by default. */
   reachableSources?: Array<{ kind: 'sqlite' | 'http' | 'mcp_server'; uri: string }>;
+  /** Optional role seed. When provided, a SeedLayer is inserted high in the prompt stack
+   *  so identity / goals / discernment all anchor on the role. */
+  seed?: import('../seeds/loader.js').SeedSpec;
 }
 
 export interface BootedHarness {
@@ -417,17 +420,25 @@ export async function boot(args: BootArgs): Promise<BootedHarness> {
     // Workaround: construct twice — first with default layers to get lawsPrompt, then construct
     // the real one with the full layer set. Cheap (laws are cached after first load).
     const transient = new Substrate();
+    const layers: Array<unknown> = [new LawsLayer(transient.lawsPrompt)];
+    if (args.seed) {
+      const { SeedLayer } = await import('../substrate-layers/seed.js');
+      layers.push(new SeedLayer(args.seed));
+      // eslint-disable-next-line no-console
+      console.log(`[boot:seed] role=${args.seed.target} loaded from ${args.seed.sourcePath} — ${args.seed.allowedTools.size} allowed tools`);
+    }
+    layers.push(
+      new V2RealityLayer(),
+      new DrivesLayer(),
+      new GoalsLayer(),
+      new IdentityLayer(),
+      new CapabilitiesLayer(),
+      new MemoryRecallLayer(),
+    );
     substrate = new Substrate({
       memory,
-      layers: [
-        new LawsLayer(transient.lawsPrompt),
-        new V2RealityLayer(),
-        new DrivesLayer(),
-        new GoalsLayer(),
-        new IdentityLayer(),
-        new CapabilitiesLayer(),
-        new MemoryRecallLayer(),
-      ],
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      layers: layers as any,
     });
   } catch (err) {
     componentHealth['runcor-substrate'] = { status: 'fail', reason: err instanceof Error ? err.message : String(err) };
