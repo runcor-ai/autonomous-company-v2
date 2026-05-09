@@ -5,6 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>runcor v2 — primordial agent</title>
   <link rel="stylesheet" href="/style.css">
+  <style>
+    /* Control disabled 2026-05-09 (CEO seed mode) — hide all control panels until re-enabled. */
+    .agent-col:nth-of-type(2),
+    .score-summary-control,
+    .summary-control,
+    #tab-control,
+    .transcript-pane-control { display: none !important; }
+    /* Make V2 column take full width when control is hidden. */
+    .agent-grid { grid-template-columns: 1fr !important; }
+    .summary-grid, .score-summary-grid { grid-template-columns: 1fr !important; }
+  </style>
 </head>
 <body>
   <header>
@@ -22,7 +33,7 @@
   <main>
     <section class="hero">
       <h1>The primordial agent</h1>
-      <p class="tag">Single agent, 14-component cognitive harness, no commercial framing, full autonomy on termination. Observed in real time alongside a parallel naive control. <a href="https://github.com/runcor-ai/autonomous-company-v2/blob/main/specs/001-primordial-agent/spec.md">spec</a> · <a href="https://github.com/runcor-ai/autonomous-company-v2/blob/main/specs/001-primordial-agent/constitution.md">constitution</a></p>
+      <p class="tag">Single agent, 14-component cognitive harness, no commercial framing, full autonomy on termination. Currently running as a CEO-seeded primordial. <a href="https://github.com/runcor-ai/autonomous-company-v2/blob/main/specs/001-primordial-agent/spec.md">spec</a> · <a href="https://github.com/runcor-ai/autonomous-company-v2/blob/main/specs/001-primordial-agent/constitution.md">constitution</a></p>
     </section>
 
     <div class="dual">

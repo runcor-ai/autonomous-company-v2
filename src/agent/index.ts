@@ -148,21 +148,13 @@ export async function runAgent(): Promise<AgentRunResult> {
     },
   });
 
-  // Co-run control alongside V2 in the same process. Control gets V2's bus so its
-  // cycle/cost/discernment events surface on the same dashboard. Errors are logged
-  // but do NOT terminate V2 — control is observational. Fire-and-forget intentionally.
-  void runControl({
-    sharedBus: harness.bus,
-    isPaused: () => operatorPause.isPaused('control'),
-    onBooted: ({ memory, dataCube, getCycle }) => {
-      controlMemory = memory as MemorySystem;
-      controlDataCube = dataCube as DataCube;
-      controlGetCycle = getCycle;
-      console.log('[v2] control co-process booted; dashboard will surface its state');
-    },
-  }).catch((err: unknown) => {
-    console.error('[v2] control co-process failed:', err instanceof Error ? err.message : err);
-  });
+  // Control co-process DISABLED 2026-05-09. With CEO seed mode active, the void-mode control
+  // contrast no longer carries the experimental weight it did under V2-002 (Principle X).
+  // Operator decision: focus compute on the seeded primordial. Dashboard control endpoints
+  // continue to exist and return empty data; UI shows them as inactive.
+  // To re-enable, restore the runControl({...}) block. runControl import retained for the
+  // future re-enable path (typecheck happy via the next line).
+  void runControl;
 
   // Hypothesis evaluator — fires periodically (default 30 min) to score V2's behavior
   // against the seed hypotheses. Results persist as memory nodes tagged
