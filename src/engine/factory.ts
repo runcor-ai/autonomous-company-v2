@@ -33,7 +33,7 @@ function makeOpenRouterProvider(opts: CreateV2EngineOptions): ModelProvider {
   // PINNED — was 'openrouter/auto' which routes adaptively. Live 2026-05-09: auto
   // selected GPT-5.4 Pro for complex substrate-stacked prompts and burned $30 on
   // two calls. Explicit model = no surprise routing. Operator preference: nemotron.
-  const defaultModel = opts.defaultModel ?? 'nvidia/llama-3.1-nemotron-70b-instruct';
+  const defaultModel = opts.defaultModel ?? 'nvidia/nemotron-3-super-120b-a12b';
   return {
     name: providerName,
     async complete(request: ModelRequest): Promise<ModelResponse> {
