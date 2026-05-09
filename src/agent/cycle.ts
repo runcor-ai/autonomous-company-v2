@@ -68,6 +68,9 @@ export interface RunCyclesArgs {
   budgetUsd: number;
   /** Returns true when terminate() was invoked or budget/cycles hit. */
   isTerminated(): boolean;
+  /** Returns true while operator has paused this role. The cycle loop polls this at the
+   *  top of each iteration and sleeps in 5s ticks until it clears (or agent terminates). */
+  isPaused?: () => boolean;
   /** Optional fixed sleep override (ms). When set, used in place of temporal.computeNextWake. */
   fixedSleepMs?: number;
   /** Optional start cycle override (resume support). Defaults to 0. */
@@ -219,6 +222,22 @@ export async function runCycles(args: RunCyclesArgs): Promise<{ cyclesRun: numbe
 
   try {
     while (cycle < args.maxCycles && !args.isTerminated() && spentUsd < args.budgetUsd) {
+      // Operator pause check — block at top of each cycle while paused. Dashboard
+      // HTTP server keeps responding because it's event-loop-driven and we await
+      // the sleep. Ticks every 5s until flag clears or agent terminates.
+      let pauseEmitted = false;
+      while (args.isPaused?.() && !args.isTerminated()) {
+        if (!pauseEmitted) {
+          args.bus.emit('operator_pause_observed', { cycle, agentRole: args.agentRole, ts: Date.now() });
+          pauseEmitted = true;
+        }
+        await sleep(5000);
+      }
+      if (pauseEmitted) {
+        args.bus.emit('operator_resume_observed', { cycle, agentRole: args.agentRole, ts: Date.now() });
+      }
+      if (args.isTerminated()) break;
+
       flagThisCycle = null;
       const startedAt = Date.now();
 

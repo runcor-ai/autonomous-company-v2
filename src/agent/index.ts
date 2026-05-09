@@ -21,6 +21,7 @@ import { RATER_SYSTEM_PROMPT } from '../rater/rubric.js';
 import { SummaryStore } from '../dashboard/summary-store.js';
 import { startBusPersistence } from '../dashboard/event-persist.js';
 import { startStateArchiver } from '../backup/state-archiver.js';
+import { OperatorPauseState } from '../dashboard/operator-pause-state.js';
 
 // Seed prompt — the question the agent is asked every cycle. Existential framing per
 // Principle II (discovered, not seeded): names neither identity nor purpose, only bare
@@ -85,6 +86,11 @@ export async function runAgent(): Promise<AgentRunResult> {
   let controlDataCube: DataCube | undefined;
   let controlGetCycle: (() => number) | undefined;
 
+  // Operator pause state — flipped by /operator/pause + /operator/resume endpoints,
+  // polled by both V2 and control cycle loops. Lets the operator freeze the experiment
+  // mid-run for inspection without redeploying.
+  const operatorPause = new OperatorPauseState();
+
   const dashboard = startDashboard({
     bus: harness.bus,
     env: harness.env,
@@ -99,6 +105,7 @@ export async function runAgent(): Promise<AgentRunResult> {
     getControlCycle: () => controlGetCycle?.() ?? 0,
     startupRecord: harness.startupRecord,
     terminationState: harness.terminationState,
+    operatorPause,
     operatorDbPath: `${harness.env.agentStateDir}/operator.db`,
     getCurrentCycle: () => harness.cycleAccessor.get(),
     getResourceInputs: () => {
@@ -140,6 +147,7 @@ export async function runAgent(): Promise<AgentRunResult> {
   // but do NOT terminate V2 — control is observational. Fire-and-forget intentionally.
   void runControl({
     sharedBus: harness.bus,
+    isPaused: () => operatorPause.isPaused('control'),
     onBooted: ({ memory, dataCube, getCycle }) => {
       controlMemory = memory as MemorySystem;
       controlDataCube = dataCube as DataCube;
@@ -393,6 +401,7 @@ Keep total under 200 words. No preamble. Do NOT just restate the prior summary �
       maxCycles: harness.env.maxCycles,
       budgetUsd: harness.env.v2BudgetUsd,
       isTerminated: harness.terminationState.isTerminated,
+      isPaused: () => operatorPause.isPaused('v2'),
       // Resume from the persisted cycle counter so redeploys don't reset to 0.
       startCycle: harness.cycleAccessor.get(),
       onCycleAdvance: (c: number) => harness.cycleAccessor.set(c),

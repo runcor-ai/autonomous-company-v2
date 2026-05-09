@@ -24,6 +24,8 @@ export interface RunControlOptions {
    *  can wire control's memory/dataCube/cycleAccessor into the dashboard for /memory?role=control,
    *  /data?role=control, and /overview?role=control panels. */
   onBooted?: (h: { memory: unknown; dataCube: unknown; getCycle: () => number }) => void;
+  /** Operator-pause accessor — when true, control's cycle loop blocks until cleared. */
+  isPaused?: () => boolean;
 }
 
 export async function runControl(opts: RunControlOptions = {}): Promise<ControlRunResult> {
@@ -65,6 +67,7 @@ export async function runControl(opts: RunControlOptions = {}): Promise<ControlR
       maxCycles: harness.env.maxCycles,
       budgetUsd: harness.controlConfig.config.budgetUsd,
       isTerminated: harness.terminationState.isTerminated,
+      ...(opts.isPaused ? { isPaused: opts.isPaused } : {}),
       fixedSleepMs: harness.controlConfig.config.cadenceMs, // FR-105 fixed cadence
       startCycle: harness.cycleAccessor.get(),
       onCycleAdvance: (c: number) => harness.cycleAccessor.set(c),

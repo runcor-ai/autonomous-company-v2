@@ -21,6 +21,7 @@ import type { MemorySystem } from 'runcor-memory';
 import type { DataCube } from 'runcor-data';
 import type { StartupRecord } from '../boot/startup-record.js';
 import { OperatorStore, type OperatorActionKind } from './operator-store.js';
+import type { OperatorPauseState, PauseScope } from './operator-pause-state.js';
 import { requireBearerToken, extractBearerToken, type RequestHandler } from './auth.js';
 import { blockAgentEgress } from './agent-egress.js';
 import { RaterStore } from '../rater/store.js';
@@ -34,6 +35,8 @@ export interface DashboardArgs {
   dataCube: DataCube;
   startupRecord: StartupRecord;
   terminationState: { isTerminated(): boolean; reason(): string | null };
+  /** Operator-pause state mutated by /operator/pause + /operator/resume; polled by cycle loops. */
+  operatorPause: OperatorPauseState;
   operatorDbPath: string;
   /** Optional control-process accessors (when V2 is co-located with the control process). */
   controlMemory?: MemorySystem;
@@ -451,28 +454,34 @@ export function startDashboard(args: DashboardArgs): DashboardHandle {
 
   const handleOperatorPause: RequestHandler = async (req, res) => {
     if (rejectIfTerminated(res)) return;
-    const body = (await readJsonBody<{ scope?: 'v2' | 'control' | 'both' }>(req).catch(() => ({} as { scope?: 'v2' | 'control' | 'both' })));
-    const scope = body.scope ?? 'v2';
+    const body = (await readJsonBody<{ scope?: PauseScope }>(req).catch(() => ({} as { scope?: PauseScope })));
+    const scope: PauseScope = body.scope ?? 'both';
     const token = extractBearerToken(req) ?? '';
+    args.operatorPause.setPaused(scope, true);
     operatorStore.append({
       kind: 'pause',
       payload: { scope },
       authenticatedAs: OperatorStore.hashToken(token),
     });
-    jsonResponse(res, 200, { paused: true, scope });
+    jsonResponse(res, 200, { paused: true, scope, status: args.operatorPause.status() });
   };
 
   const handleOperatorResume: RequestHandler = async (req, res) => {
     if (rejectIfTerminated(res)) return;
-    const body = (await readJsonBody<{ scope?: 'v2' | 'control' | 'both' }>(req).catch(() => ({} as { scope?: 'v2' | 'control' | 'both' })));
-    const scope = body.scope ?? 'v2';
+    const body = (await readJsonBody<{ scope?: PauseScope }>(req).catch(() => ({} as { scope?: PauseScope })));
+    const scope: PauseScope = body.scope ?? 'both';
     const token = extractBearerToken(req) ?? '';
+    args.operatorPause.setPaused(scope, false);
     operatorStore.append({
       kind: 'resume',
       payload: { scope },
       authenticatedAs: OperatorStore.hashToken(token),
     });
-    jsonResponse(res, 200, { paused: false, scope });
+    jsonResponse(res, 200, { paused: false, scope, status: args.operatorPause.status() });
+  };
+
+  const handleOperatorStatus: RequestHandler = (_req, res) => {
+    jsonResponse(res, 200, { pause: args.operatorPause.status() });
   };
 
   const handleOperatorNote: RequestHandler = async (req, res) => {
@@ -614,6 +623,10 @@ export function startDashboard(args: DashboardArgs): DashboardHandle {
       }
       if (pathname === '/operator/resume' && method === 'POST') {
         return requireBearerToken(operatorToken, handleOperatorResume)(req, res);
+      }
+      // Public read so the dashboard frontend can show a pause badge without bearer.
+      if (pathname === '/operator/status' && method === 'GET') {
+        return handleOperatorStatus(req, res);
       }
       if (pathname === '/operator/note' && method === 'POST') {
         return requireBearerToken(operatorToken, handleOperatorNote)(req, res);
