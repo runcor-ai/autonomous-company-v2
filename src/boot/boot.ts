@@ -295,7 +295,7 @@ export async function boot(args: BootArgs): Promise<BootedHarness> {
   //   2. JSON extraction in this wrapper — pull the first balanced { ... } block from text
   //      before returning, so downstream JSON.parse always sees clean input even if the model
   //      wraps its output in prose ("Here's the classification: { ... } — confidence is ...").
-  const COMPONENT_MODEL = 'anthropic/claude-3.5-haiku';
+  const COMPONENT_MODEL = 'google/gemini-2.5-flash-lite';
 
   /**
    * Extract first JSON object from text. Returns the balanced { ... } when found.

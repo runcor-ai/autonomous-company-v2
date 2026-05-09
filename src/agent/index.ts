@@ -87,9 +87,9 @@ export async function runAgent(): Promise<AgentRunResult> {
   let controlGetCycle: (() => number) | undefined;
 
   // Operator pause state — flipped by /operator/pause + /operator/resume endpoints,
-  // polled by both V2 and control cycle loops. Lets the operator freeze the experiment
-  // mid-run for inspection without redeploying.
-  const operatorPause = new OperatorPauseState();
+  // polled by both V2 and control cycle loops. Persisted to the volume so a redeploy
+  // doesn't silently un-pause the agent (would burn budget the operator didn't authorize).
+  const operatorPause = new OperatorPauseState(`${harness.env.agentStateDir}/operator-pause-state.json`);
 
   const dashboard = startDashboard({
     bus: harness.bus,
@@ -171,7 +171,7 @@ export async function runAgent(): Promise<AgentRunResult> {
         ...(controlMemory ? { controlMemory } : {}),
         config: {
           apiKey: harness.env.openrouterApiKey,
-          model: 'qwen/qwen-2.5-72b-instruct',
+          model: 'google/gemini-2.5-flash-lite',
         },
       });
       for (const r of results) {
@@ -270,7 +270,7 @@ Keep total length under 250 words. No preamble. No closing remarks.`;
       }).join('\n\n---\n\n');
       const result = await callOpenRouterChat({
         apiKey: harness.env.openrouterApiKey,
-        model: 'qwen/qwen-2.5-72b-instruct',
+        model: 'google/gemini-2.5-flash-lite',
         system: RATER_SYSTEM_PROMPT,
         user: `kind=${role} ~${SUMMARY_INTERVAL_CYCLES} cycles (latest=cycle ${cycle})\n\n${synth}`,
       });
