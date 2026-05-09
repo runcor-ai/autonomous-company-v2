@@ -63,6 +63,10 @@ export function registerPrimordialCycleFlow(engine: Runcor): void {
         __substrateLayerContext?: LayerContext;
       } = {
         prompt: input.userPrompt,
+        // Force JSON mode — nemotron-3-super was leaking chain-of-thought prose
+        // ("We are at cycle 0", "Ensure correct formatting") in place of action JSON.
+        // OpenRouter's response_format: json_object on this model produces strict JSON.
+        responseFormat: 'json',
         ...(input.model ? { model: input.model } : {}),
         ...(typeof input.maxTokens === 'number' ? { maxTokens: input.maxTokens } : {}),
         ...(typeof input.temperature === 'number' ? { temperature: input.temperature } : {}),

@@ -275,6 +275,10 @@ export async function runCycles(args: RunCyclesArgs): Promise<{ cyclesRun: numbe
         const exec: Execution = await args.engine.trigger(args.flowName, {
           idempotencyKey: `${args.agentRole}-cycle-${cycle}-${startedAt}`,
           input: { layerContext, userPrompt: args.userPrompt },
+          // Bumped from default 30s — nemotron-3-super-120b on substrate-stacked prompts
+          // routinely takes >30s to first token via OpenRouter, manifesting as
+          // "Execution timed out after 30000ms" failures (~50% of cycles 2026-05-09).
+          timeout: 90_000,
         });
         // engine.trigger() dispatches the flow handler asynchronously — it does NOT await
         // handler completion. exec.result is null until the handler finishes. We have to
