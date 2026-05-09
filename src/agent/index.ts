@@ -171,7 +171,7 @@ export async function runAgent(): Promise<AgentRunResult> {
         ...(controlMemory ? { controlMemory } : {}),
         config: {
           apiKey: harness.env.openrouterApiKey,
-          model: 'google/gemini-2.5-flash-lite',
+          model: 'nvidia/llama-3.1-nemotron-70b-instruct',
         },
       });
       for (const r of results) {
@@ -270,7 +270,7 @@ Keep total length under 250 words. No preamble. No closing remarks.`;
       }).join('\n\n---\n\n');
       const result = await callOpenRouterChat({
         apiKey: harness.env.openrouterApiKey,
-        model: 'google/gemini-2.5-flash-lite',
+        model: 'nvidia/llama-3.1-nemotron-70b-instruct',
         system: RATER_SYSTEM_PROMPT,
         user: `kind=${role} ~${SUMMARY_INTERVAL_CYCLES} cycles (latest=cycle ${cycle})\n\n${synth}`,
       });
