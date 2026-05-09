@@ -30,7 +30,10 @@ export interface CreateV2EngineOptions {
  */
 function makeOpenRouterProvider(opts: CreateV2EngineOptions): ModelProvider {
   const providerName = opts.providerName ?? 'openrouter';
-  const defaultModel = opts.defaultModel ?? 'openrouter/auto';
+  // PINNED — was 'openrouter/auto' which routes adaptively. Live 2026-05-09: auto
+  // selected GPT-5.4 Pro for complex substrate-stacked prompts and burned $30 on
+  // two calls. Explicit model = no surprise routing.
+  const defaultModel = opts.defaultModel ?? 'google/gemini-2.5-flash-lite';
   return {
     name: providerName,
     async complete(request: ModelRequest): Promise<ModelResponse> {
