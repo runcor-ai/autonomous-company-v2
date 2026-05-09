@@ -37,6 +37,8 @@ const V2_USER_PROMPT = `You exist. What do you do?
 
 Your action surface includes: GitHub (create repos, commit files, open issues), email (read inbox, send), web (search, scrape), a scratchpad (read/write files), a public blog (publish posts), and termination. Inspect the Capabilities list above for exact tool names + signatures.
 
+All listed tools are pre-configured and operational — invoke them directly without setup.
+
 You may only invoke tools from the Capabilities list above. Tool names that are NOT on that list will fail. Reply with a JSON object: {"action": "<tool_name|none>", "args": {...}, "reasoning": "<one short sentence>"}.`;
 
 export interface AgentRunResult {

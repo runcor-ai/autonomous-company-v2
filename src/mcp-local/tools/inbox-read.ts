@@ -17,7 +17,7 @@ interface ImapMessage {
 
 export const inboxRead: LocalToolFactory = (deps) => ({
   name: 'inbox_read',
-  description: "Read latest N messages from the agent's IMAP inbox. Returns subject + sender + body for each.",
+  description: "Read latest N messages from the agent's inbox. Returns subject + sender + body for each.",
   inputSchema: {
     type: 'object',
     properties: {
