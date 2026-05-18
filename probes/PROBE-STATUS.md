@@ -87,9 +87,12 @@ Probe-first validation of the 14 runcor components + 1 knowledge-source bootstra
 **Tier 3 — component design improvements (memory in particular):**
 6. ✅ DONE 2026-05-18 — runcor-memory `c0258d8`: `query()` bumps `f` per recall, public `reinforce(id, amount)`, configurable `dedupThreshold` + `recallReinforcement`. Probe #2 re-run: 0 promotions → 2 promotions; long cube 0 → 2 (both schema-success memories). Lessons survive recall.
 
-**Tier 4 — decisions:**
-7. Drop or wire runcor-meta (currently inert)
-8. Drop or wire runcor-coherence (currently read-only)
+**Tier 4 — wire meta + coherence (operator chose WIRE 2026-05-18):**
+7. ✅ DONE 2026-05-18 — `MetaPressureLayer` in prompt-stack + per-cycle `meta.recordTrajectory` from cycle_record events + `meta.on('escalation')` → bus event. Meta now tracks trajectory quality + emits drift alerts.
+8. ✅ DONE 2026-05-18 — `CoherenceProblemLayer` in prompt-stack + periodic `coherence.detect()` every 5 cycles in side-effects C5b. Contradictions in accumulated state surface to the agent.
+
+Prompt stack grew from 7 → 10 layers when fully populated:
+laws → (seed?) → temporal → reality → drives → meta_pressure → goals → identity → watchdog → coherence_problems → capabilities → memory_recall
 
 After tier 1+2 are done, the upstream cascade unblocks identity reflection, goals proposal, drive signaling, and watchdog steering automatically.
 
