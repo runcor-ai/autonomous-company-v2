@@ -14,8 +14,8 @@ Probe-first validation of the 14 runcor components + 1 knowledge-source bootstra
 | 4 | runcor-drives | DONE | **COMPONENT PASS / V2 WIRING FAIL** — all 4 drive functions work; V2 hardcodes empty inputs for reactivity + coherence → agent always sees 0 for half the drives |
 | 5 | runcor-watchdog | DONE | **COMPONENT PASS / V2 STEERING GAP** — matchers work; V2 writes findings to memory but has no WatchdogLayer → findings only reach agent by recall accident |
 | 6 | runcor-substrate | DONE | **FULL PASS** — PromptStack assembles correctly, discernment gate blocks ungrounded outputs, V2 installs the monkey-patch + registers all 7 layers |
-| 7 | runcor-identity | NEXT | — |
-| 8 | runcor-dialectic | pending | — |
+| 7 | runcor-identity | DONE | **FULL PASS** — works + V2 wires correctly; "stayed v1" is upstream blocked by runcor-data not populating cube to gate threshold |
+| 8 | runcor-dialectic | NEXT | — |
 | 9 | runcor-temporal | pending | — |
 | 10 | runcor-skills | pending | — |
 | 11 | runcor-meta | pending | — |
@@ -32,6 +32,7 @@ Probe-first validation of the 14 runcor components + 1 knowledge-source bootstra
 - [04 — runcor-drives](results/04-drives.md)
 - [05 — runcor-watchdog](results/05-watchdog.md)
 - [06 — runcor-substrate](results/06-substrate.md)
+- [07 — runcor-identity](results/07-identity.md)
 
 ## What's emerging
 
