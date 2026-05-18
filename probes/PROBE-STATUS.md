@@ -12,8 +12,8 @@ Probe-first validation of the 14 runcor components + 1 knowledge-source bootstra
 | 2 | runcor-memory | DONE | **MIXED** — recall works, decay works; promotion unreachable, no reinforce primitive, dedup over-aggressive |
 | 3 | runcor-goals | DONE | **COMPONENT PASS / V2 WIRING FAIL** — decayStep exists and works; V2 never calls it (one-line fix) |
 | 4 | runcor-drives | DONE | **COMPONENT PASS / V2 WIRING FAIL** — all 4 drive functions work; V2 hardcodes empty inputs for reactivity + coherence → agent always sees 0 for half the drives |
-| 5 | runcor-watchdog | NEXT | — |
-| 6 | runcor-substrate | pending | — |
+| 5 | runcor-watchdog | DONE | **COMPONENT PASS / V2 STEERING GAP** — matchers work; V2 writes findings to memory but has no WatchdogLayer → findings only reach agent by recall accident |
+| 6 | runcor-substrate | NEXT | — |
 | 7 | runcor-identity | pending | — |
 | 8 | runcor-dialectic | pending | — |
 | 9 | runcor-temporal | pending | — |
@@ -30,6 +30,7 @@ Probe-first validation of the 14 runcor components + 1 knowledge-source bootstra
 - [02 — runcor-memory](results/02-memory.md)
 - [03 — runcor-goals](results/03-goals.md)
 - [04 — runcor-drives](results/04-drives.md)
+- [05 — runcor-watchdog](results/05-watchdog.md)
 
 ## What's emerging
 
