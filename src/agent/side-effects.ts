@@ -166,6 +166,17 @@ export async function runSideEffects(args: SideEffectsArgs): Promise<SideEffects
     }
   }
 
+  // C4a. Goal decay — runs every cycle. Without this, accepted goals never retire
+  // (probe #3, 2026-05-18 confirmed). One observed "push data_processor.py" goal
+  // stayed active from cycle 339 to cycle 446 in the V2 forensic before this fix.
+  if (args.goals) {
+    try {
+      args.goals.decayStep(args.cycle);
+    } catch (e) {
+      result.errors.push({ step: 'goals_decay', error: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
   // C4. Goal proposals + acceptance (cadence + readiness gate).
   // Skip when the data cube is empty: proposals from a void produce navel-gazing goals
   // ("audit yourself", "document capabilities") that anchor every later cycle's MemoryRecall.

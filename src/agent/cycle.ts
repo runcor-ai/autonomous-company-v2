@@ -154,6 +154,35 @@ function captureDrivePressure(memory: MemorySystem, args: RunCyclesArgs, current
   const allMemory = memory.getAll();
   const tagSet = new Set<string>();
   for (const m of allMemory) for (const t of m.tags ?? []) tagSet.add(t);
+
+  // ── Reactivity inputs: derived from bus events (probe #4 fix, 2026-05-18) ──
+  // Before this fix: reactivity was hardcoded `pendingEvents: []` → agent always saw 0 reactivity.
+  // Now: scan the bus for recent unhandled inbox messages, flag burst warnings, and side-effect
+  // errors as event-shaped pressure.
+  const recentBusEvents = args.bus.snapshotAfter(0).slice(-200);
+  const pendingEvents: Array<{ kind: string; urgency: 'low' | 'medium' | 'high' | 'critical'; age: number }> = [];
+  for (const ev of recentBusEvents) {
+    if (ev.event === 'flag_burst_warning') {
+      pendingEvents.push({ kind: 'discernment_flag_burst', urgency: 'high', age: 0 });
+    } else if (ev.event === 'side_effect_error') {
+      pendingEvents.push({ kind: 'side_effect_error', urgency: 'medium', age: 0 });
+    } else if (ev.event === 'execution_complete') {
+      const d = ev.data as Record<string, unknown> | undefined;
+      if (d?.state === 'failed' || d?.error) {
+        pendingEvents.push({ kind: 'execution_failed', urgency: 'medium', age: 0 });
+      }
+    }
+  }
+  // Cap so a single noisy cycle doesn't saturate
+  const cappedEvents = pendingEvents.slice(-10);
+
+  // ── Coherence inputs: identity claims + recent action records (probe #4 fix) ──
+  // Before: hardcoded empty arrays → coherence always 0. Now: pull real claims from identity
+  // and recent actions from bus, so claim↔action mismatch can actually be detected.
+  const selfTheoryClaims: string[] = args.identity?.current().claims ?? [];
+  const { records: recentActionRecords } = buildRecentActions({ bus: args.bus, agentRole: args.agentRole });
+  const recentActions = recentActionRecords.map((r) => ({ action: r.action, confidence: r.confidence }));
+
   return computeDrives({
     resource: { remaining, total: args.budgetUsd, burnPerCycle, cyclesUsed },
     curiosity: {
@@ -161,8 +190,8 @@ function captureDrivePressure(memory: MemorySystem, args: RunCyclesArgs, current
       knownAreas: Array.from(tagSet),
       recentExplorationCycles: 0,
     },
-    reactivity: { pendingEvents: [] },
-    coherence: { selfTheoryClaims: [], recentActions: [] },
+    reactivity: { pendingEvents: cappedEvents },
+    coherence: { selfTheoryClaims, recentActions },
   });
 }
 

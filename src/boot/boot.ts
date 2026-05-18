@@ -26,6 +26,7 @@ import {
   DrivesLayer,
   GoalsLayer,
   IdentityLayer,
+  WatchdogLayer,
   CapabilitiesLayer,
   MemoryRecallLayer,
 } from '../substrate-layers/index.js';
@@ -436,6 +437,7 @@ export async function boot(args: BootArgs): Promise<BootedHarness> {
       new DrivesLayer(),
       new GoalsLayer(),
       new IdentityLayer(),
+      new WatchdogLayer(memory),
       new CapabilitiesLayer(),
       new MemoryRecallLayer(),
     );
