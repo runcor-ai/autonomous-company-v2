@@ -11,8 +11,8 @@ Probe-first validation of the 14 runcor components + 1 knowledge-source bootstra
 | 1 | runcor-data | DONE | **FAIL** — 9/20 entities, 0 edges, 55% pipeline failures, nonsense entity types |
 | 2 | runcor-memory | DONE | **MIXED** — recall works, decay works; promotion unreachable, no reinforce primitive, dedup over-aggressive |
 | 3 | runcor-goals | DONE | **COMPONENT PASS / V2 WIRING FAIL** — decayStep exists and works; V2 never calls it (one-line fix) |
-| 4 | runcor-drives | NEXT | — |
-| 5 | runcor-watchdog | pending | — |
+| 4 | runcor-drives | DONE | **COMPONENT PASS / V2 WIRING FAIL** — all 4 drive functions work; V2 hardcodes empty inputs for reactivity + coherence → agent always sees 0 for half the drives |
+| 5 | runcor-watchdog | NEXT | — |
 | 6 | runcor-substrate | pending | — |
 | 7 | runcor-identity | pending | — |
 | 8 | runcor-dialectic | pending | — |
@@ -29,6 +29,7 @@ Probe-first validation of the 14 runcor components + 1 knowledge-source bootstra
 - [01 — runcor-data](results/01-data.md) — TBD writeup
 - [02 — runcor-memory](results/02-memory.md)
 - [03 — runcor-goals](results/03-goals.md)
+- [04 — runcor-drives](results/04-drives.md)
 
 ## What's emerging
 
