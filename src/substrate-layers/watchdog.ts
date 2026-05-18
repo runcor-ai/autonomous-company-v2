@@ -22,11 +22,15 @@ export class WatchdogLayer implements PromptLayer {
     const all = this.memory.getAll();
     // Open watchdog findings = memory nodes tagged 'watchdog_finding' AND 'open' (per
     // side-effects.ts:213-217). 'dismissed' findings are skipped.
+    // Surface ALL watchdog_finding-tagged nodes regardless of open/dismissed.
+    // Why ignore the open/dismissed split: side-effects.ts uses skipValidation: true on
+    // watchdog.audit (to bypass strict dialectic gate that was filtering all candidates).
+    // skipValidation → all findings come back with validated: false → all get tagged
+    // 'dismissed' even though they're real matcher-fired signals. Filtering for 'open'
+    // here means we'd never see ANYTHING. Surface them all; let the agent + operator
+    // judge relevance.
     const openFindings = all
-      .filter((n) => {
-        const tags = n.tags ?? [];
-        return tags.includes('watchdog_finding') && tags.includes('open');
-      })
+      .filter((n) => (n.tags ?? []).includes('watchdog_finding'))
       .sort((a, b) => b.lastAccessed - a.lastAccessed)
       .slice(0, MAX_FINDINGS_RENDERED);
 

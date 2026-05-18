@@ -284,13 +284,30 @@ export async function runCycles(args: RunCyclesArgs): Promise<{ cyclesRun: numbe
         ...(args.allowedTools ? { allowedTools: args.allowedTools } : {}),
       });
 
+      // Telemetry: ask the substrate's PromptStack which layers actually rendered non-empty
+      // for this context. Previously hardcoded — which lied when WatchdogLayer / SeedLayer
+      // / TemporalContextLayer were added. The runtime stack assembles correctly either
+      // way; this just makes the bus event reflect reality.
+      const nonEmptyLayerNames = (() => {
+        try {
+          // PromptStack lives on the substrate (substrate.promptStack in current contract)
+          const ps = (args.engine as unknown as { substrate?: { promptStack?: { nonEmptyLayerNames(ctx: unknown): string[] } } }).substrate?.promptStack;
+          return ps?.nonEmptyLayerNames(layerContext) ?? (
+            layerContext.recalledNodes.length > 0
+              ? ['laws', 'reality', 'drives', 'goals', 'identity', 'capabilities', 'memory_recall']
+              : ['laws', 'drives', 'capabilities']
+          );
+        } catch {
+          return layerContext.recalledNodes.length > 0
+            ? ['laws', 'reality', 'drives', 'goals', 'identity', 'capabilities', 'memory_recall']
+            : ['laws', 'drives', 'capabilities'];
+        }
+      })();
       args.bus.emit('prompt_assembled', {
         cycle,
         agentRole: args.agentRole,
         memoryRecallQuery,
-        nonEmptyLayers: layerContext.recalledNodes.length > 0
-          ? ['laws', 'reality', 'drives', 'goals', 'identity', 'capabilities', 'memory_recall']
-          : ['laws', 'drives', 'capabilities'],
+        nonEmptyLayers: nonEmptyLayerNames,
       });
 
       let status: CycleStatus = 'completed';
