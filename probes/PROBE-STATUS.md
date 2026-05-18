@@ -88,8 +88,11 @@ Probe-first validation of the 14 runcor components + 1 knowledge-source bootstra
 6. ✅ DONE 2026-05-18 — runcor-memory `c0258d8`: `query()` bumps `f` per recall, public `reinforce(id, amount)`, configurable `dedupThreshold` + `recallReinforcement`. Probe #2 re-run: 0 promotions → 2 promotions; long cube 0 → 2 (both schema-success memories). Lessons survive recall.
 
 **Tier 4 — wire meta + coherence (operator chose WIRE 2026-05-18):**
-7. ✅ DONE 2026-05-18 — `MetaPressureLayer` in prompt-stack + per-cycle `meta.recordTrajectory` from cycle_record events + `meta.on('escalation')` → bus event. Meta now tracks trajectory quality + emits drift alerts.
-8. ✅ DONE 2026-05-18 — `CoherenceProblemLayer` in prompt-stack + periodic `coherence.detect()` every 5 cycles in side-effects C5b. Contradictions in accumulated state surface to the agent.
+7. ✅ DONE 2026-05-18 — `MetaPressureLayer` in prompt-stack + per-cycle `meta.recordTrajectory` from cycle_record events + `meta.on('escalation')` → bus event. Meta now tracks trajectory quality + emits drift alerts. Standalone probe `scripts/probe/integration-tier-4.ts`: 9/9 PASS at $0 cost.
+8. ✅ DONE 2026-05-18 — `CoherenceProblemLayer` in prompt-stack + periodic `coherence.detect()` every 5 cycles in side-effects C5b. Contradictions in accumulated state surface to the agent. Verified in same probe.
+
+### Dialectic Judge 400 regression (2026-05-18) — RESOLVED
+Root cause: stale local `dist/` in runcor-dialectic. Source had the parseModel-wrapper fix committed as `b6293d4`, but `dist/index.js` (built from an earlier revision) still passed raw `judgeCfg.model` to checkIncorporation/checkNovelty. V2 reads the sibling via `file:../runcor-dialectic` symlink, so it got the stale bytes. Fixed by `npm run build` in the runcor-dialectic repo. Verified by `scripts/probe/dialectic-judge-repro.ts` — canonical-topology dialectic with maxRounds=3 succeeds. Lesson: rebuild every modified sibling before running V2's cycle loop; prefer probe-style verification.
 
 Prompt stack grew from 7 → 10 layers when fully populated:
 laws → (seed?) → temporal → reality → drives → meta_pressure → goals → identity → watchdog → coherence_problems → capabilities → memory_recall
