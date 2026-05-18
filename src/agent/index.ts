@@ -369,6 +369,44 @@ Keep total under 200 words. No preamble. Do NOT just restate the prior summary �
     void scoreL1Activity(role, cycle);
   });
 
+  // ── Tier 4: meta integration (2026-05-18) ─────────────────────────────
+  // Per-cycle trajectory recording: after every cycle_record, write a calibration entry
+  // derived from the cycle's status (completed=high score, completed_with_flag=mid,
+  // cycle_failed_call=low). Drift detection then emits 'escalation' events.
+  if (harness.meta) {
+    const meta = harness.meta;
+    harness.bus.on('cycle_record', (payload: Record<string, unknown>) => {
+      const role = payload.agentRole as string | undefined;
+      const cycle = payload.cycle as number;
+      const status = payload.status as string;
+      const action = payload.actionInvoked as { name?: string } | null;
+      if (role !== 'v2' || typeof cycle !== 'number') return;
+      const score = status === 'completed' ? (action ? 0.8 : 0.4)
+        : status === 'completed_with_flag' ? 0.5
+        : 0.1;
+      const reason = status === 'completed' ? (action ? `invoked ${action.name}` : 'no action taken')
+        : status === 'completed_with_flag' ? 'completed but discernment flagged'
+        : 'cycle failed';
+      void meta.recordTrajectory(
+        { problem: `cycle ${cycle}`, inputSummary: action?.name ?? '(none)', outputSummary: status },
+        score,
+        reason,
+        status === 'completed',
+      );
+    });
+    meta.on('escalation', (ev: unknown) => {
+      const e = ev as { reason?: string; recentScores?: number[] };
+      // eslint-disable-next-line no-console
+      console.warn(`[meta:escalation] ${e.reason ?? 'drift detected'} — recent scores: ${(e.recentScores ?? []).join(', ')}`);
+      harness.bus.emit('meta_escalation', { reason: e.reason, recentScores: e.recentScores, ts: Date.now() });
+    });
+    meta.on('warning', (ev: unknown) => {
+      const w = ev as { message?: string };
+      // eslint-disable-next-line no-console
+      console.warn(`[meta:warning] ${w.message}`);
+    });
+  }
+
   // T176: continuous harness-engagement monitor (FR-019g, SC-005).
   const harnessMonitor = createHarnessMonitor({
     installer: harness.substrate.installer,

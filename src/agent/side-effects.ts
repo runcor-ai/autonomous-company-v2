@@ -55,6 +55,7 @@ export interface SideEffectsArgs {
   identity: Identity | null;
   goals: Goals | null;
   watchdog: Watchdog | null;
+  coherence: import('runcor-coherence').Coherence | null;
   skills: Skills | null;
   /** Dialectic, used by identity.reflect / goals.propose / skills.synthesize. Null in control. */
   dialectic: ((config: DialecticConfig) => Promise<DialecticResult>) | null;
@@ -230,6 +231,19 @@ export async function runSideEffects(args: SideEffectsArgs): Promise<SideEffects
       }
     } catch (e) {
       result.errors.push({ step: 'watchdog_audit', error: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  // C5b. Coherence problem detection (Tier 4, 2026-05-18).
+  // Runs every COHERENCE_DETECT_EVERY cycles. coherence.detect() scans accumulated state
+  // for contradictions and emits Problems that CoherenceProblemLayer surfaces into the
+  // next prompt. Bypassed if coherence wasn't constructed (control mode).
+  const COHERENCE_DETECT_EVERY = 5;
+  if (args.coherence && args.cycle > 0 && args.cycle % COHERENCE_DETECT_EVERY === 0) {
+    try {
+      await args.coherence.detect({});
+    } catch (e) {
+      result.errors.push({ step: 'coherence_detect', error: e instanceof Error ? e.message : String(e) });
     }
   }
 

@@ -392,6 +392,7 @@ export async function runCycles(args: RunCyclesArgs): Promise<{ cyclesRun: numbe
           identity: args.identity,
           goals: args.goals,
           watchdog: args.watchdog,
+          coherence: args.coherence,
           skills: args.skills,
           dialectic: args.dialectic,
           action,

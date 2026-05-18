@@ -27,6 +27,8 @@ import {
   GoalsLayer,
   IdentityLayer,
   WatchdogLayer,
+  MetaPressureLayer,
+  CoherenceProblemLayer,
   CapabilitiesLayer,
   MemoryRecallLayer,
 } from '../substrate-layers/index.js';
@@ -41,6 +43,7 @@ import type { Integration } from 'runcor-integration';
 import { createIdentity, type Identity } from 'runcor-identity';
 import { createGoals, type Goals } from 'runcor-goals';
 import { createCoherence, type Coherence } from 'runcor-coherence';
+import { createMeta, type Meta } from 'runcor-meta';
 import { createTemporal, type Temporal } from 'runcor-temporal';
 import { createWatchdog, type Watchdog } from 'runcor-watchdog';
 import { createSkills, type Skills } from 'runcor-skills';
@@ -73,6 +76,7 @@ export interface BootedHarness {
   coherence: Coherence | null;
   temporal: Temporal;
   watchdog: Watchdog | null;
+  meta: Meta | null;
   skills: Skills | null;
   dialectic: ((config: DialecticConfig) => Promise<DialecticResult>) | null;
   localMcp: LocalMcpServer;
@@ -435,9 +439,11 @@ export async function boot(args: BootArgs): Promise<BootedHarness> {
     layers.push(
       new V2RealityLayer(),
       new DrivesLayer(),
+      new MetaPressureLayer(() => meta),
       new GoalsLayer(),
       new IdentityLayer(),
       new WatchdogLayer(memory),
+      new CoherenceProblemLayer(() => coherence),
       new CapabilitiesLayer(),
       new MemoryRecallLayer(),
     );
@@ -482,6 +488,7 @@ export async function boot(args: BootArgs): Promise<BootedHarness> {
   let goals: Goals | null = null;
   let coherence: Coherence | null = null;
   let watchdog: Watchdog | null = null;
+  let meta: Meta | null = null;
   let skills: Skills | null = null;
   let dialecticFn: ((config: DialecticConfig) => Promise<DialecticResult>) | null = null;
 
@@ -524,6 +531,19 @@ export async function boot(args: BootArgs): Promise<BootedHarness> {
     } catch (err) {
       componentHealth['runcor-skills'] = { status: 'fail', reason: err instanceof Error ? err.message : String(err) };
       throw new BootError('runcor-skills', err instanceof Error ? err.message : String(err));
+    }
+    try {
+      // runcor-meta wraps the cycle to score every trajectory + emit drift escalation.
+      // Needs the dialectic for trajectory scoring + checkpoint adjudication.
+      meta = createMeta({
+        dbPath: dbPathFor(env, args.agentRole, 'meta'),
+        dialectic: async ({ problem, maxRounds }) => ({
+          answer: (await dialecticFn!({ problem, ...(typeof maxRounds === 'number' ? { maxRounds } : {}) })).answer,
+        }),
+      });
+    } catch (err) {
+      componentHealth['runcor-meta'] = { status: 'fail', reason: err instanceof Error ? err.message : String(err) };
+      throw new BootError('runcor-meta', err instanceof Error ? err.message : String(err));
     }
   }
 
@@ -649,6 +669,7 @@ export async function boot(args: BootArgs): Promise<BootedHarness> {
     coherence,
     temporal,
     watchdog,
+    meta,
     skills,
     dialectic: dialecticFn,
     localMcp,

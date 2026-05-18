@@ -9,8 +9,10 @@
 
 export { V2RealityLayer } from './reality.js';
 export { DrivesLayer } from './drives.js';
+export { MetaPressureLayer } from './meta-pressure.js';
 export { GoalsLayer } from './goals.js';
 export { IdentityLayer } from './identity.js';
 export { WatchdogLayer } from './watchdog.js';
+export { CoherenceProblemLayer } from './coherence-problems.js';
 export { CapabilitiesLayer } from './capabilities.js';
 export { MemoryRecallLayer } from './memory-recall.js';
