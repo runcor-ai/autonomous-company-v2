@@ -79,10 +79,10 @@ Probe-first validation of the 14 runcor components + 1 knowledge-source bootstra
 1. ✅ DONE 2026-05-18 — Rewrote runcor-data's ingest with code-first V2-action extractor. 9→49 entities, 0→36 edges, 55%→0% failure, 30-152s→3ms. Both readiness gates now OPEN. runcor-data commit `899701b`.
 
 **Tier 2 — small V2/Lattice wiring fixes (load-bearing for the harness):**
-2. Add `goals.decayStep(cycle)` to side-effects (probe #3)
-3. Wire real reactivity + coherence inputs in `captureDrivePressure` (probe #4)
-4. Add `WatchdogLayer` to prompt-stack (probe #5)
-5. Pass `LatticeConfig.knowledgeSources` as `reachableSources` to boot (probes #12 + #15)
+2. ✅ DONE 2026-05-18 — `goals.decayStep(cycle)` in side-effects C4a (probe #3)
+3. ✅ DONE 2026-05-18 — Real reactivity + coherence inputs in `captureDrivePressure` from bus events + identity (probe #4)
+4. ✅ DONE 2026-05-18 — `WatchdogLayer` in prompt-stack between Identity + Capabilities (probe #5)
+5. DEFERRED — Pass `LatticeConfig.knowledgeSources` as `reachableSources` to boot (probes #12 + #15) — requires LatticeConfig to exist; will land in the Lattice rebuild itself
 
 **Tier 3 — component design improvements (memory in particular):**
 6. `query()` should bump `f`; add `reinforce()`; tune promotion threshold (probe #2)
