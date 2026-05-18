@@ -9,7 +9,7 @@ Probe-first validation of the 14 runcor components + 1 knowledge-source bootstra
 | # | Component | Status | Verdict |
 |---|---|---|---|
 | 1 | runcor-data | **FIXED 2026-05-18** | Was: FAIL (9/20 entities, 0 edges, 55% failure). After Tier 1 V2-action extractor: 49 entities, 36 edges, 0% failure, ~3ms/ingest, both readiness gates OPEN. See [01-data.md](results/01-data.md). |
-| 2 | runcor-memory | DONE | **MIXED** — recall works, decay works; promotion unreachable, no reinforce primitive, dedup over-aggressive |
+| 2 | runcor-memory | **FIXED 2026-05-18** | Was: MIXED (0 promotions, no reinforce API, fixed dedup). After Tier 3: query() bumps f, public reinforce(), configurable thresholds. Re-run: 0→2 promotions, schema-success memories now survive recall. |
 | 3 | runcor-goals | DONE | **COMPONENT PASS / V2 WIRING FAIL** — decayStep exists and works; V2 never calls it (one-line fix) |
 | 4 | runcor-drives | DONE | **COMPONENT PASS / V2 WIRING FAIL** — all 4 drive functions work; V2 hardcodes empty inputs for reactivity + coherence → agent always sees 0 for half the drives |
 | 5 | runcor-watchdog | DONE | **COMPONENT PASS / V2 STEERING GAP** — matchers work; V2 writes findings to memory but has no WatchdogLayer → findings only reach agent by recall accident |
@@ -85,7 +85,7 @@ Probe-first validation of the 14 runcor components + 1 knowledge-source bootstra
 5. DEFERRED — Pass `LatticeConfig.knowledgeSources` as `reachableSources` to boot (probes #12 + #15) — requires LatticeConfig to exist; will land in the Lattice rebuild itself
 
 **Tier 3 — component design improvements (memory in particular):**
-6. `query()` should bump `f`; add `reinforce()`; tune promotion threshold (probe #2)
+6. ✅ DONE 2026-05-18 — runcor-memory `c0258d8`: `query()` bumps `f` per recall, public `reinforce(id, amount)`, configurable `dedupThreshold` + `recallReinforcement`. Probe #2 re-run: 0 promotions → 2 promotions; long cube 0 → 2 (both schema-success memories). Lessons survive recall.
 
 **Tier 4 — decisions:**
 7. Drop or wire runcor-meta (currently inert)

@@ -1,40 +1,45 @@
-# Probe #2 — runcor-memory
+# Probe #2 — runcor-memory (BEFORE + AFTER Tier 3 fix)
 
-**Status:** MIXED (3 PASS, 2 FAIL) — but the failures point to structural gaps, not bugs.
+## BEFORE fix (2026-05-17)
 
-**Ran:** 2026-05-18
-**Inputs:** 50 realistic V2-shape episodic records
-**Probe source:** `scripts/probe/02-memory.ts`
+| Check | Value |
+|---|---|
+| Recall accuracy | 100% (8/8 — semantic recall solid) |
+| Forgetting fires | YES (13/15 cycles forgot something) |
+| Promotion to long cube | **0** across 15 cycles |
+| Long cube final size | 0 |
+| `query()` reinforces `f` | **NO** — only re-records (via dedup) bumped f |
+| Public `reinforce(id)` | **MISSING** |
+| Dedup threshold | hardcoded 0.90 cosine |
 
-## Results
+## ROOT CAUSE
 
-| Check | Result | Detail |
-|---|---|---|
-| Insert succeeds | PASS-ish | 34 created, 16 deduped, 0 errors. Aggressive dedup merged distinct events. |
-| Recall accuracy | **PASS (8/8 = 100%)** | Every query found the right tagged node in top-3 |
-| Forgetting fires | PASS | 13 nodes decayed below threshold across 15 cycles |
-| Promotion to long cube | **FAIL (0 promotions)** | Default-R nodes can't reach M=0.6 threshold |
-| Errors ≤ 10% | PASS | 0% errors |
+`query()` reset `t` and updated `lastAccessed` but didn't bump `f`. With R=0.85 and f=1, M = 0.589 — below the 1.5 promotion threshold. Even after 8 recall hits, f stayed at 1, so M stayed at 0.589, and the node decayed out before it could ever promote.
 
-## What works
+Net effect for V2: schema-lessons couldn't survive long enough to be recalled when the agent was about to repeat the same broken tool call.
 
-- `query()` semantic recall is solid — found the right schema-success / schema-fail / decision / identity / discernment nodes for plain-English queries.
-- `cycle()` correctly increments `t`, recalculates `M`, decays low-value nodes out.
+## AFTER fix (2026-05-18) — runcor-memory commit `c0258d8`
 
-## What's structurally broken
+- `query()` bumps `f` by `config.recallReinforcement` (default 1) per retrieved node, recalculates M with new f, resets t
+- New public `reinforce(id, amount=1)` method for explicit out-of-band weighting
+- `MemoryConfig.dedupThreshold` (default 0.90 preserved)
+- `MemoryConfig.recallReinforcement` (default 1; set 0 to disable)
+- `config-loader` merges both new fields
 
-1. **`query()` doesn't reinforce `f`.** Reading a memory has no durability effect. Only re-recording similar content (which triggers dedup-reinforcement) bumps `f`.
-2. **Promotion unreachable for default-R nodes.** With R=0.7, f=1, t=0, D≈0.5 → M≈0.49. Threshold is 0.6. Long cube stayed empty across 15 cycles.
-3. **No public `reinforce(nodeId)`.** Nothing for the agent/side-effects pipeline to deliberately weight a memory.
-4. **Dedup at 0.90 cosine may be too aggressive.** 32% of distinct events were merged. Could collapse "succeeded with commitMessage" + "failed without" into one node, losing the contrast.
+| Check | Value |
+|---|---|
+| Recall accuracy | 100% (still) |
+| Promotion to long cube | **2** (after 8 recall hits on schema-success nodes) |
+| Long cube final | **2 schema-success memories** |
+| Forgetting | 9 across 15 cycles (slightly fewer because the high-value ones promoted instead) |
 
-## How this explains V2's schema-amnesia
+## Cascade
 
-It's not "MemoryRecallLayer never queries" — it's "by the time MemoryRecallLayer queries, the schema lesson is gone." Lessons happen once each, with moderate R, never promote, and decay out of the short cube within ~15 cycles.
+The "schema-amnesia" pattern from V2 forensic (succeeded → failed → succeeded → failed at cycles 160/250/300/350) was caused by lessons aging out of short cube before being recalled again. With this fix, **recalling a lesson makes it MORE durable, not less.** That's the structural change that lets the harness actually learn from its own history.
 
-## Recommended fixes for the Lattice build
+## Implementation
 
-- One-line: `query()` should `f += 1` on retrieved nodes
-- Add: `reinforce(nodeId, amount?)` public method
-- Tune: promotion threshold or default R distribution so important memories CAN promote
-- Configurable: dedup similarity threshold (currently hardcoded 0.90)
+- File: `runcor-memory/src/memory-system.ts` — query() and new reinforce() method
+- File: `runcor-memory/src/types.ts` — MemoryConfig extended with dedupThreshold + recallReinforcement
+- File: `runcor-memory/src/config-loader.ts` — merge new fields
+- Commit: runcor-memory `c0258d8`
