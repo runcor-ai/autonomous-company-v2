@@ -16,13 +16,13 @@ Probe-first validation of the 14 runcor components + 1 knowledge-source bootstra
 | 6 | runcor-substrate | DONE | **FULL PASS** — PromptStack assembles correctly, discernment gate blocks ungrounded outputs, V2 installs the monkey-patch + registers all 7 layers |
 | 7 | runcor-identity | DONE | **FULL PASS** — works + V2 wires correctly; "stayed v1" is upstream blocked by runcor-data not populating cube to gate threshold |
 | 8 | runcor-dialectic | DONE | **FULL PASS** — Player(nemotron-120b)/Coach(qwen3-32b)/Judge(llama-8b) all fire; V2 wires correctly to identity + goals |
-| 9 | runcor-temporal | NEXT | — |
-| 10 | runcor-skills | pending | — |
-| 11 | runcor-meta | pending | — |
-| 12 | runcor-integration | pending (PROMOTED — critical for MCP coord + knowledge sources) | — |
-| 13 | runcor-coherence | pending | — |
-| 14 | runcor (engine) | pending | — |
-| 15 | knowledge-source bootstrap | pending | — |
+| 9 | runcor-temporal | DONE | **FULL PASS** — computeNextWake + isDayBoundary work; V2 uses both |
+| 10 | runcor-skills | DONE | **FULL PASS** — proposeSkill returns R++ + confidence; V2 wires (every 50 cycles) |
+| 11 | runcor-meta | DONE | **COMPONENT OK / V2 NEVER USES IT** — listed in boot guard but 0 imports/0 constructs/0 calls in V2 source |
+| 12 | runcor-integration | DONE | **COMPONENT PASS / DORMANT IN V2** — works + V2 wires the calls, but agent never passes reachableSources. Critical wiring gap for the Lattice design (knowledge sources + MCP peer discovery both depend on this). |
+| 13 | runcor-coherence | DONE | **COMPONENT PASS / V2 READ-ONLY** — full API exists; V2 only reads via dashboard; cycle loop never submits tasks → registeredEngines stays 0 |
+| 14 | runcor (engine) | DONE | **FULL PASS** — all core methods present, cost telemetry fires, flows register and trigger |
+| 15 | knowledge-source bootstrap | DONE | **PRIMITIVES READY / LATTICE WIRING REQUIRED** — engine+integration APIs all there; LatticeConfig.knowledgeSources field + boot-time MCP adapter registration is what's missing |
 
 ## Result files
 
@@ -34,20 +34,63 @@ Probe-first validation of the 14 runcor components + 1 knowledge-source bootstra
 - [06 — runcor-substrate](results/06-substrate.md)
 - [07 — runcor-identity](results/07-identity.md)
 - [08 — runcor-dialectic](results/08-dialectic.md)
+- [09 — runcor-temporal](results/09-temporal.md)
+- [10 — runcor-skills](results/10-skills.md)
+- [11 — runcor-meta](results/11-meta.md)
+- [12 — runcor-integration](results/12-integration.md)
+- [13 — runcor-coherence](results/13-coherence.md)
+- [14 — runcor (engine)](results/14-engine.md)
+- [15 — knowledge-source bootstrap readiness](results/15-knowledge-bootstrap.md)
 
-## What's emerging
+## ALL 15 PROBES COMPLETE — punch list
 
-After 3 probes, three distinct failure categories surfacing:
+| Component | Status | Category | Fix shape |
+|---|---|---|---|
+| 1 runcor-data | **FAIL** | Component-internal bug | Pipeline rewrite — 55% ingest failure, 0 edges, nonsense entity types |
+| 2 runcor-memory | MIXED | Design gap | `query()` should bump `f`; add `reinforce()` public; tune promotion threshold or default R; configurable dedup |
+| 3 runcor-goals | COMPONENT PASS / V2 WIRING FAIL | V2 wiring | One-line: call `goals.decayStep(cycle)` every cycle in side-effects.ts |
+| 4 runcor-drives | COMPONENT PASS / V2 WIRING FAIL | V2 wiring | ~15 lines: wire real reactivity (bus events) + coherence (identity claims + actions) into `captureDrivePressure` |
+| 5 runcor-watchdog | COMPONENT PASS / V2 STEERING GAP | V2 wiring | Add `WatchdogLayer` to prompt-stack so findings deterministically reach the next prompt |
+| 6 runcor-substrate | **FULL PASS** | — | none |
+| 7 runcor-identity | **FULL PASS** | (blocked upstream by #1) | none — fixes when #1 fixes |
+| 8 runcor-dialectic | **FULL PASS** | — | none |
+| 9 runcor-temporal | **FULL PASS** | — | none |
+| 10 runcor-skills | **FULL PASS** | — | none (parser peer-dep is optional but improves confidence) |
+| 11 runcor-meta | COMPONENT OK / V2 NEVER USES | Drop or wire | Either remove from required-14 OR add MetaLayer + recordTrajectory calls |
+| 12 runcor-integration | COMPONENT PASS / DORMANT IN V2 | Lattice wiring | Critical — Lattice boot must pass `reachableSources` from harness knowledge bundle |
+| 13 runcor-coherence | COMPONENT PASS / V2 READ-ONLY | Drop or wire | Same as meta — drop or wire `submit/route/parallel` into cycle |
+| 14 runcor (engine) | **FULL PASS** | — | none |
+| 15 knowledge-source bootstrap | PRIMITIVES READY | Lattice design work | Write `LatticeConfig.knowledgeSources` + boot adapter registration |
 
-1. **Component-internal bugs** (probe #1, runcor-data): pipeline produces nonsense entity types, zero edges, 55% failure rate. Needs rewrite at the component level.
+## Pattern across the 15
 
-2. **Component design gaps** (probe #2, runcor-memory): mechanically works but defaults don't match V2's usage. Recall doesn't reinforce frequency; promotion threshold unreachable for default-R; no explicit reinforce primitive. Needs design changes inside the component.
+| Category | Count | Notes |
+|---|---|---|
+| **Full pass** | 5 | substrate, identity, dialectic, temporal, skills, engine — solid |
+| **Mixed / design gap** | 1 | memory — works but defaults are wrong for V2's usage |
+| **V2 wiring fail (component works)** | 3 | goals, drives, watchdog — fixable in V2 source |
+| **Component dormant in V2** | 3 | meta (never used), coherence (read-only), integration (no sources) |
+| **Component-internal bug** | 1 | data — needs pipeline rewrite |
+| **Lattice readiness** | 1 | knowledge-source bootstrap — design work, no probe failure |
 
-3. **V2 wiring bugs** (probe #3, runcor-goals): component is correct, V2 fails to use it. `decayStep()` exists but V2 never calls it → goals immortal. One-line fix in V2.
+## The actual surgery the Lattice rebuild needs
 
-These need different responses:
-- Category 1 → rewrite the component
-- Category 2 → tune the component's defaults / add missing APIs
-- Category 3 → fix V2's side-effects pipeline
+**Tier 1 — must fix (blocks everything else):**
+1. Rewrite runcor-data's pipeline (probe #1) — currently 55% failure, 0 edges, nonsense entity types
 
-The Lattice rebuild needs to address all three, not assume they're the same problem.
+**Tier 2 — small V2/Lattice wiring fixes (load-bearing for the harness):**
+2. Add `goals.decayStep(cycle)` to side-effects (probe #3)
+3. Wire real reactivity + coherence inputs in `captureDrivePressure` (probe #4)
+4. Add `WatchdogLayer` to prompt-stack (probe #5)
+5. Pass `LatticeConfig.knowledgeSources` as `reachableSources` to boot (probes #12 + #15)
+
+**Tier 3 — component design improvements (memory in particular):**
+6. `query()` should bump `f`; add `reinforce()`; tune promotion threshold (probe #2)
+
+**Tier 4 — decisions:**
+7. Drop or wire runcor-meta (currently inert)
+8. Drop or wire runcor-coherence (currently read-only)
+
+After tier 1+2 are done, the upstream cascade unblocks identity reflection, goals proposal, drive signaling, and watchdog steering automatically.
+
+**This is much smaller than expected.** Most of the work is wiring, not rewriting.
